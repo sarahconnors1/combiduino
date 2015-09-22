@@ -1,9 +1,10 @@
-//-------------------------------------------- Include Files --------------------------------------------//
+//-------------------------------------------- Include Files --------------------------------------------// 
 #include <EEPROM.h>
 #include <SPI.h>
 #include <boards.h>
 #include <RBL_nRF8001.h>
 //-------------------------------------------- Global variables --------------------------------------------//
+
 
 // declaration du debugging
 boolean debugging = true; // a mettre a falsdebuge pour ne pas debugger
