@@ -1,10 +1,10 @@
-//-------------------------------------------- Include Files --------------------------------------------// 
+#pragma GCC optimize ("-O2")
+//-------------------------------------------- Include Files --------------------------------------------//
 #include <EEPROM.h>
 #include <SPI.h>
 #include <boards.h>
 #include <RBL_nRF8001.h>
 //-------------------------------------------- Global variables --------------------------------------------//
-
 
 // declaration du debugging
 boolean debugging = true; // a mettre a falsdebuge pour ne pas debugger
@@ -20,6 +20,7 @@ int MAP_pin = A0;                   // depression
 //----------------------------
 // pin 8 et 9
 const boolean init_BT = true; // pour creer la config BT a mettre a false normalement
+char BT_name [] = "Combiduino";
 String OutputString = "";
 //Serial input initailisation
 String inputString = "";            // a string to hold incoming data
@@ -88,8 +89,13 @@ const int debut_eeprom = 50; //Pour laisser un peu de vide
 const int taille_carto = 500; // carto complete avec kpa + rpm
 const int debut_kpa = 400; //Pour ecrire les kpa au 400 de chaque MAP
 const int debut_rpm = 420; //Pour ecrire les rpm au 420 de chaque MAP
+// gestion parametre de eeprom
 const int eprom_carto_actuel = 0; // emplacement dans EEPROM
 const int eprom_init = 1; // emplacement dans EEPROM de init =100 OK sinon on ecrase les cartos
+const int eprom_nom_BLE = 10; // emplaceement eeprom du  nom du BLE
+const int eprom_rev_max = 21; // emplaceement eeprom du  REV MAX
+const int eprom_rev_min = 23; // emplaceement eeprom du  REV MIN
+const int eprom_debug = 2; // emplaceement eeprom du  debug
 boolean init_eeprom = true; // si true on re ecrit les carto au demarrage
 //-------------------------------------------- Initialise Parameters --------------------------------------------//
 void setup() {
@@ -99,6 +105,8 @@ void setup() {
   pinMode(SAW_pin, OUTPUT);                                                 //  SAW_pin as a digital output
   pinMode(interrupt_X, INPUT);
   digitalWrite (interrupt_X, HIGH);
+//  digitalWrite (interrupt_X, LOW);
+
 
   for (int thisReading = 0; thisReading < numReadings; thisReading++)       //populate manifold pressure averaging array with zeros
     readings[thisReading] = 100;
@@ -110,25 +118,25 @@ void setup() {
   Serial.begin(38400);                                                       // Initialise serial communication at 38400 Baud
   inputString.reserve(1000);   //reserve 200 bytes for serial input - equates to 25 characters
 
-  // Initialisationdu BT
-  ble_set_name("Combiduino");
-  ble_begin();
-
+ 
   time_loop_old = millis();
 
   // init des cartos si pas deja fait
-  if (String(EEPROM.read(eprom_init) )  != "100" ) {
-    init_eeprom = true; // on lance init
-  }else{ 
-    init_eeprom = false;
-  }
-    
-  // init_eeprom = true; // a detagger pour re initialisation
-  
+  if (String(EEPROM.read(eprom_init) )  != "100" ) { init_eeprom = true; }else{init_eeprom = false;} // on lance l'init de l'eeprom si necessaire   
+   init_eeprom = true; // A DE TAGGER POUR INITIALISATION  
   if (init_eeprom == true) {debug ("Init des MAP EEPROM");init_de_eeprom(); } // on charge les map EEPROM a partir de la RAM
-  
+ 
+ 
+ 
+ // lecture des carto
   debug ("Init des MAP RAM");
   read_eeprom(); // on charge les MAP en RAM a partir de l'eeprom et la dernière MAP utilisée
+  
+   // Initialisationdu BT
+  ble_set_name(BT_name);
+  ble_begin();
+
+  
   debug ("ready!");
 }
 
@@ -145,7 +153,7 @@ void loop() {
     Degree_Avance_calcul = rpm_pressure_to_spark(engine_rpm_average, map_pressure_kpa);
     newvalue = false;
   }
-
+ 
   // gestions sortie pour module exterieur
   if ((loop_count == 40) or (loop_count == 60)) {
     gestionsortie();
@@ -163,7 +171,6 @@ void loop() {
 
   ble_do_events();
 }
-
 
 
 
