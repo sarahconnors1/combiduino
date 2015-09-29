@@ -87,6 +87,33 @@ void checkdesordres(){
       //parm 1 nr de carto EEPROM
       send_rpm_iphone();
     }
+    else if (inputString.startsWith("gt1") ) {//envoie le setting a l'iphone
+      //parm retour carto demarrage 
+      // debug 1/0 (oui/non)
+      //rev mini
+      // rev maxi
+      // retour exemple "gt1;5;0;1000;6000
+      send_setting1_iphone();
+    }
+     else if (inputString.startsWith("st1;") ) {//ecrit le nouveau setting dans eeprom 
+      //parm retour carto demarrage 
+      // debug 1/0 (oui/non)
+      //rev mini
+      // rev maxi
+      //  exemple "st1;5;0;1000;6000
+      send_setting1_ecu();
+    }
+      else if (inputString.startsWith("gt2") ) {//envoie le setting a l'iphone
+      //parm retour nom bluettooth 
+      // retour exemple "gt2;combiduino
+      send_setting2_iphone();
+    }
+     else if (inputString.startsWith("st2;") ) {//ecrit le nouveau setting dans eeprom 
+      //parm retour nom bluetooth
+      //  exemple "st2;combiduino
+      send_setting2_ecu();
+    }
+    
 
    // RAZ c est traite 
      inputString = "";
@@ -97,6 +124,64 @@ void checkdesordres(){
 //---------------------------------------
 //  GESTION DES COMMANDES
 //---------------------------------------
+
+
+// Maj des settings dans l'eeprom a partir ded l'Iphone
+void send_setting1_ecu(){
+    String carto="1";
+  String debug = "0";
+  String rpmmin = "1000";
+  String rpmmax = "6000";
+  carto = getValue(inputString, ';', 1) ; // 1er parametre
+  debug = getValue(inputString, ';', 2) ; // 2er parametre
+  rpmmin = getValue(inputString, ';', 3) ; // 3er parametre
+  rpmmax = getValue(inputString, ';', 4) ; // 4er parametre
+  
+  
+   if ( (carto.toInt() > 0) || (carto.toInt() <= nombre_carto_max) ) {
+     EEPROM.write(eprom_carto_actuel, carto.toInt()); // MAP en cours = 1
+     carto_actuel = carto.toInt();
+   }   
+   if ( (debug.toInt() >= 0) || (debug.toInt() <= 1) ) {
+     EEPROM.write(eprom_debug, debug.toInt()); // debug 
+     debugging = debug.toInt() == 0 ? true : false;
+   }
+   if (rpmmin.toInt() < 1000) {
+     EEPROMWriteInt(eprom_rev_min, rpmmin.toInt() ); // rev min
+   }
+   if (rpmmax.toInt() > 1000 and rpmmax.toInt() < 9999) {
+     EEPROMWriteInt(eprom_rev_max, rpmmax.toInt() ); // rev max 
+   }
+}
+
+void send_setting2_ecu(){
+   char BT []= "combiduino";
+   String nameBT = "";
+   
+   nameBT= getValue(inputString, ';', 1) + "          ";
+   nameBT.toCharArray(BT, 10) ; // 1er parametre
+
+   
+  for (int i = 0; i <=10; i++) {
+    BT_name[i] = BT[i];
+    EEPROM.write(eprom_nom_BLE + i, BT_name[i]); // Nom du Bluettooth
+  }
+}
+
+// Envoie le setting 1 a l'iphone
+void send_setting1_iphone() {
+   OutputString = "gt1;" + String(EEPROM.read(eprom_carto_actuel)) + ";" + String(EEPROM.read(eprom_debug))+ ";" + String(EEPROMReadInt(eprom_rev_min)) +  ";" + String(EEPROMReadInt(eprom_rev_max))  ; 
+        Send_to_BT(OutputString); 
+        debug(OutputString);
+  }
+
+// Envoie le setting 2 a l'iphone
+void send_setting2_iphone() {
+   OutputString = "gt2;" + String(BT_name); 
+        Send_to_BT(OutputString); 
+        debug(OutputString);
+  }
+
 
 // changement de carto actuelle en carto X
 void changement_carto_ram(){
@@ -165,7 +250,7 @@ void carto_eeprom_vers_ram(){
 
 // lit une carto EEPROM ----> IPHONE
 // format "cep,nrcarto,nrligne, point RPM,degre"
-void "(){
+void send_carto_iphone(){
     String cartoeeprom="1";
     OutputString = "";
   cartoeeprom = getValue(inputString, ';', 1) ; // 2eme parametre
@@ -229,20 +314,20 @@ String SortieBT;
 
 // on envoie au port serie pour debug
  if (debugging == true && 1==2 ){
-  debug(" | RPM ");
-  debug(String(engine_rpm_average) );
+// if (debugging == true  ){
+  debug("RPM |" +String(engine_rpm_average)+" PIP:"+String(pip_count ) );
   
-  debug(" | degre ");
-  debug(String(Degree_Avance_calcul) );
-  debug(" | cor degre ");
-  debug(String(correction_degre) );
-  debug(" | DEP ");
-  debug(String(map_pressure_kpa) );
-  debug(" | mini DEP ");
-  debug(String(min_pressure_kpa_recorded) );
-  debug(" | carto ");
-  debug(String(carto_actuel) );
-  debug(" | ");
+//  debug(" | degre ");
+//  debug(String(Degree_Avance_calcul) );
+//  debug(" | cor degre ");
+//  debug(String(correction_degre) );
+//  debug(" | DEP ");
+//  debug(String(map_pressure_kpa) );
+//  debug(" | mini DEP ");
+//  debug(String(min_pressure_kpa_recorded) );
+//  debug(" | carto ");
+//  debug(String(carto_actuel) );
+//  debug(" | ");
  }
 
 // on envoie au port BT
@@ -253,9 +338,9 @@ if (output == true){
  
 
  // ECU;9999;100;032 // RPM KPA Degre
-   SortieBT = "ECU;" + String(engine_rpm_average) + ";" + String(map_pressure_kpa) + ";"+ String(Degree_Avance_calcul); 
+   SortieBT = "ECU;" + String(engine_rpm_average) + ";" + String(map_pressure_kpa) + ";"+ String(Degree_Avance_calcul) ; 
    Send_to_BT(SortieBT); 
   }
  
  } 
-
+ 
