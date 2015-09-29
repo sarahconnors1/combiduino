@@ -5,6 +5,15 @@
 
 // constitution de eeprom
 // 0 ---> 49 parametre
+// 0 = carto actuel
+// 1 = init a faire si <> 100
+// 2 = debug 0/1
+// 10 -> 20 nom du BLE
+// 21,22 -> REV MAX
+// 23,24 -> REV MIN
+
+
+
 // 50 -----> 441 carto 1 (23*17 = 391)
 // 450 ----> 469 kpa 1
 // 470 ----> 549 RPM 1
@@ -75,7 +84,6 @@ void writeeepromline(int nr_ligne, int nr_carto) {
   }
   nr_carto-- ; // car la carto 1 -> pas de décalage
   adresse = (nr_carto * taille_carto)  + (nr_ligne * nbr_byte_par_ligne) + debut_eeprom; // on retrouve l'adresse du début de la ligne a écrirr
-  debug("adreese eeprom write carto " + String(adresse));
   for (int offset = 0; offset < nombre_point_RPM; offset++) { // offset = la
     EEPROM.write(adresse + offset * nbr_byte_par_int,  EEPROM_lignecarto[offset] ); // on lit tout les points
   }
@@ -92,7 +100,6 @@ void readeepromline(int nr_ligne, int nr_carto) {
   }
   nr_carto-- ; // car la carto 1 -> pas de décalage
   adresse = (nr_carto * taille_carto)  + (nr_ligne * nbr_byte_par_ligne) + debut_eeprom; // on retrouve l'adresse du début de la ligne a écrirr
-  debug("adreese eeprom read carto " + String(adresse));
   for (int offset = 0; offset < nombre_point_RPM; offset++) { // offset = la
     EEPROM_lignecarto[offset] = EEPROM.read(adresse + offset * nbr_byte_par_int ); // on lit tout les points
   }
@@ -133,7 +140,6 @@ void writeeepromlinekpa(int nr_carto) {
 
   nr_carto-- ; // car la carto 1 -> pas de décalage
   adresse = (nr_carto * taille_carto ) + debut_kpa + debut_eeprom; // on retrouve l'adresse du début de la ligne a écrirr
- debug("adreese eeprom write kpa" + String(adresse));
   for (int offset = 0; offset < nombre_point_DEP; offset++) { // offset = la
     EEPROM.write(adresse + offset * nbr_byte_par_int,  EEPROM_ligneKPA[offset] ); // on lit tout les points
   }
@@ -147,7 +153,6 @@ void readeepromlinekpa(int nr_carto) {
   
   nr_carto-- ; // car la carto 1 -> pas de décalage
   adresse = (nr_carto * taille_carto) + debut_kpa + debut_eeprom; // on retrouve l'adresse du début de la ligne a écrirr
-  debug("adreese eeprom read kpa" + String(adresse));
   for (int offset = 0; offset < nombre_point_DEP; offset++) { // offset = la
     EEPROM_ligneKPA[offset] = EEPROM.read(adresse + offset * nbr_byte_par_int ); // on lit tout les points
   }
@@ -188,7 +193,6 @@ void writeeepromlinerpm(int nr_carto) {
 
   nr_carto-- ; // car la carto 1 -> pas de décalage
   adresse = (nr_carto * taille_carto) + debut_rpm + debut_eeprom; // on retrouve l'adresse du début de la ligne a écrirr
-    debug("adreese eeprom write rpm" + String(adresse));
   for (int offset = 0; offset < nombre_point_RPM; offset++) { // offset = la
     EEPROMWriteInt(adresse + offset * 2, EEPROM_ligneRPM[offset]); // on ecrit des vrai Int sur 2 Bytes
   }
@@ -202,7 +206,6 @@ void readeepromlinerpm(int nr_carto) {
   
   nr_carto-- ; // car la carto 1 -> pas de décalage
   adresse = (nr_carto *taille_carto) + debut_rpm + debut_eeprom; // on retrouve l'adresse du début de la ligne a écrirr
-    debug("adreese eeprom read RPM" + String(adresse));
   for (int offset = 0; offset < nombre_point_DEP; offset++) { // offset = la
     EEPROM_ligneRPM[offset] =EEPROMReadInt(adresse + offset * 2)  ; // on lit tout les points avec des vrais Int donc 2 bytes
   }
@@ -218,26 +221,61 @@ void init_de_eeprom() {
   // on génére les 5 MAP avec  les MAP par defaut
   for (int carto = 1; carto <= nombre_carto_max; carto++) {
     writecarto_ram_eeprom(carto , carto);
-  //  write_ram_eeprom_kpa(carto, carto);
-  //  write_ram_eeprom_rpm(carto, carto);
   }
   EEPROM.write(eprom_carto_actuel, 1); // MAP en cours = 1
   EEPROM.write(eprom_init, 100); // init effectué
+  for (int i = 0; i <=10; i++) {
+  EEPROM.write(eprom_nom_BLE + i, BT_name[i]); // Nom du Bluettooth
+  }
+  
+  EEPROM.write(eprom_debug, 0); // debug par defaut a non
+  EEPROMWriteInt(eprom_rev_max, rev_limit); // rev max par defaut
+  EEPROMWriteInt(eprom_rev_min, rev_mini); // rev max par defaut
 }
 
 void read_eeprom() {
   // on lit toute les carto de l'eeprom pour les mettre en RAM
   for (int carto = 1; carto <= nombre_carto_max; carto++) {
     writecarto_eeprom_ram(carto , carto);
-//    write_eeprom_ram_kpa(carto, carto);
- //   write_eeprom_ram_rpm(carto, carto);
+debug ("Read EEPROM carto nr " + String(carto));
   }
   carto_actuel = EEPROM.read(eprom_carto_actuel);
-  if ( (carto_actuel < 0) || (carto_actuel > nombre_carto_max) ) { // scarto invalide on remet la carto 1
+  if ( (carto_actuel < 0) || (carto_actuel > nombre_carto_max) ) { // carto invalide on remet la carto 1
     EEPROM.write(eprom_carto_actuel, 1); // MAP en cours = 1
     carto_actuel = 1;
   }
+  
+  // debugging
+  int debugtemp = 0;
+  debugtemp = EEPROM.read(eprom_debug);
+  
+  if  (debugtemp > 1 ){
+    EEPROM.write(eprom_debug, 0); // debug par defaut a non
+    debugging = false;
+   } else{
+     if (debugtemp == 0 ){
+         debugging = false;
+       }else{
+         debugging = true;  
+       }
+  }
+  
+  // nom du bluetooth
+  for (int i = 0; i <=10; i++) {
+     BT_name[i]=  EEPROM.read(eprom_nom_BLE + i); // Nom du Bluettooth
+  }
+  
+  // RPM MAX
+  rev_limit = EEPROMReadInt(eprom_rev_max);
+  if (rev_limit == 0 || rev_limit >= 8000){
+    EEPROMWriteInt(eprom_rev_max, 4500); // rev max par defaut
+   } 
+  
+  // RPM MIN
+   rev_mini = EEPROMReadInt(eprom_rev_min);
+  if (rev_mini == 0 || rev_mini >= 1000){
+    EEPROMWriteInt(eprom_rev_min, 500); // rev min par defaut
+   } 
 }
 
-
-
+ 
