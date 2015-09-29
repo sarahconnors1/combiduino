@@ -1,7 +1,7 @@
 // ------------------------------------------------------
 //    GESTION DES FONCTIONS BLUETOOTH
 // -----------------------------------------------------
-
+//
 void Send_to_BT(String str) {
   
   // envoie au debug sauf si info ECU RPM
