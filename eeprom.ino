@@ -8,6 +8,8 @@
 // 0 = carto actuel
 // 1 = init a faire si <> 100
 // 2 = debug 0/1
+// 3 = multispark 0/1
+// 4,5 => avance initiale
 // 10 -> 20 nom du BLE
 // 21,22 -> REV MAX
 // 23,24 -> REV MIN
@@ -228,11 +230,16 @@ void init_de_eeprom() {
   EEPROM.write(eprom_nom_BLE + i, BT_name[i]); // Nom du Bluettooth
   }
   
-  EEPROM.write(eprom_debug, 0); // debug par defaut a non
+  EEPROM.write(eprom_debug, 1); // debug par defaut a oui
+  EEPROM.write(eprom_ms, 1); // multispark par defaut a oui
   EEPROMWriteInt(eprom_rev_max, rev_limit); // rev max par defaut
   EEPROMWriteInt(eprom_rev_min, rev_mini); // rev max par defaut
+  EEPROMWriteInt(eprom_avance, 0); // avance suppelmentaire par defaut
 }
-
+//-------------------------------------------------------------------
+//        LECTURE DES PARAMETRE DE L'EEPROM
+//            AU DEMARRAGE
+//-------------------------------------------------------------------
 void read_eeprom() {
   // on lit toute les carto de l'eeprom pour les mettre en RAM
   for (int carto = 1; carto <= nombre_carto_max; carto++) {
@@ -260,6 +267,22 @@ debug ("Read EEPROM carto nr " + String(carto));
        }
   }
   
+    // multispark
+  int mstemp = 0;
+  mstemp = EEPROM.read(eprom_ms);
+  
+  if  (mstemp > 1 ){
+    EEPROM.write(eprom_ms, 1); // debug par defaut a oui
+    multispark = false;
+   } else{
+     if (mstemp == 0 ){
+         multispark = false;
+       }else{
+         multispark = true;  
+       }
+  }
+  
+  
   // nom du bluetooth
   for (int i = 0; i <=10; i++) {
      BT_name[i]=  EEPROM.read(eprom_nom_BLE + i); // Nom du Bluettooth
@@ -276,6 +299,13 @@ debug ("Read EEPROM carto nr " + String(carto));
   if (rev_mini == 0 || rev_mini >= 1000){
     EEPROMWriteInt(eprom_rev_min, 500); // rev min par defaut
    } 
+   
+    // Avance initiale
+   correction_degre = EEPROMReadInt(eprom_avance);
+  if (correction_degre >= 25){
+    EEPROMWriteInt(eprom_avance, 25); // rev min par defaut
+    correction_degre = 25;
+   } 
 }
 
- 
+
