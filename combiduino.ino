@@ -39,6 +39,7 @@ boolean fixed = false;              // declare whether to use fixed advance valu
 int fixed_advance = 15;             // Avance fixe
 boolean multispark = true;         // multispark
 boolean first_multispark = true;         // 1er allumage en multispark
+int correction_degre = 0; // correction de la MAP
 
 volatile boolean newvalue = true;  // check si des nouvelles valeurs RPM/pression ont ete calculés
 //gestion simplifie des rpm
@@ -72,7 +73,7 @@ float loop_frequence = 0;
 const int nombre_point_RPM = 23; // nombre de point de la MAP
 const int nombre_point_DEP = 17; // nombre de point de la MAP
 const int nombre_carto_max = 5; // nombre de carto a stocker
-int correction_degre = 0; // correction de la MAP
+
 int carto_actuel = 1; //cartographie en cours
 
 //----------------------------
@@ -96,6 +97,8 @@ const int eprom_nom_BLE = 10; // emplaceement eeprom du  nom du BLE
 const int eprom_rev_max = 21; // emplaceement eeprom du  REV MAX
 const int eprom_rev_min = 23; // emplaceement eeprom du  REV MIN
 const int eprom_debug = 2; // emplaceement eeprom du  debug
+const int eprom_ms = 3; // emplaceement eeprom du  multispark
+const int eprom_avance = 4; // emplaceement eeprom de avance initiale
 boolean init_eeprom = true; // si true on re ecrit les carto au demarrage
 //-------------------------------------------- Initialise Parameters --------------------------------------------//
 void setup() {
@@ -153,7 +156,7 @@ void loop() {
     Degree_Avance_calcul = rpm_pressure_to_spark(engine_rpm_average, map_pressure_kpa);
     newvalue = false;
   }
- 
+
   // gestions sortie pour module exterieur
   if ((loop_count == 40) or (loop_count == 60)) {
     gestionsortie();
