@@ -113,6 +113,19 @@ void checkdesordres(){
       //  exemple "st2;combiduino
       send_setting2_ecu();
     }
+    else if (inputString.startsWith("gt3") ) {//envoie le setting a l'iphone
+      //parm retour carto demarrage 
+      // multispark 1/0 (oui/non)
+      // correction avance
+      send_setting3_iphone();
+    }
+     else if (inputString.startsWith("st3;") ) {//ecrit le nouveau setting dans eeprom 
+      //parm retour carto demarrage 
+      // multispark 1/0 (oui/non)
+      // correction avance
+      //  exemple "st3;0;3
+      send_setting3_ecu();
+    }
     
 
    // RAZ c est traite 
@@ -126,7 +139,13 @@ void checkdesordres(){
 //---------------------------------------
 
 
-// Maj des settings dans l'eeprom a partir ded l'Iphone
+
+
+//-----------------------------------------------------------------
+//       ENVOI DES SETTINGS DE L'IPHONE => ECU
+//-----------------------------------------------------------------
+
+// Maj des settings dans l'eeprom a partir de l'Iphone
 void send_setting1_ecu(){
     String carto="1";
   String debug = "0";
@@ -168,6 +187,30 @@ void send_setting2_ecu(){
   }
 }
 
+void send_setting3_ecu(){  
+  String ms = "0";
+  String avance = "0";
+  ms = getValue(inputString, ';', 1) ; // 1er parametre
+  avance = getValue(inputString, ';', 2) ; // 2er parametre
+// multispark
+   if ( (ms.toInt() >= 0) || (ms.toInt() <= 1) ) {
+     EEPROM.write(eprom_ms, ms.toInt()); // debug 
+     multispark = ms.toInt() == 0 ? true : false;
+   }
+// correction avance   
+   if (avance.toInt() < 25) {
+     EEPROMWriteInt(eprom_avance, avance.toInt() ); // rev min
+     correction_degre = avance.toInt();
+   }
+  
+}
+
+
+//-----------------------------------------------------------------
+//       ENVOI DES SETTINGS A L'IPHONE
+//-----------------------------------------------------------------
+
+
 // Envoie le setting 1 a l'iphone
 void send_setting1_iphone() {
    OutputString = "gt1;" + String(EEPROM.read(eprom_carto_actuel)) + ";" + String(EEPROM.read(eprom_debug))+ ";" + String(EEPROMReadInt(eprom_rev_min)) +  ";" + String(EEPROMReadInt(eprom_rev_max))  ; 
@@ -178,6 +221,13 @@ void send_setting1_iphone() {
 // Envoie le setting 2 a l'iphone
 void send_setting2_iphone() {
    OutputString = "gt2;" + String(BT_name); 
+        Send_to_BT(OutputString); 
+        debug(OutputString);
+  }
+
+// Envoie le setting 3 a l'iphone  
+  void send_setting3_iphone() {
+   OutputString = "gt3;" + String(EEPROM.read(eprom_ms)) + ";" + String(EEPROMReadInt(eprom_avance)) ;; 
         Send_to_BT(OutputString); 
         debug(OutputString);
   }
@@ -315,19 +365,7 @@ String SortieBT;
 // on envoie au port serie pour debug
  if (debugging == true && 1==2 ){
 // if (debugging == true  ){
-  debug("RPM |" +String(engine_rpm_average)+" PIP:"+String(pip_count ) );
-  
-//  debug(" | degre ");
-//  debug(String(Degree_Avance_calcul) );
-//  debug(" | cor degre ");
-//  debug(String(correction_degre) );
-//  debug(" | DEP ");
-//  debug(String(map_pressure_kpa) );
-//  debug(" | mini DEP ");
-//  debug(String(min_pressure_kpa_recorded) );
-//  debug(" | carto ");
-//  debug(String(carto_actuel) );
-//  debug(" | ");
+  debug("RPM :" +String(engine_rpm_average)++ "MAP :" + String(map_pressure_kpa) + "DEG :"+ String(Degree_Avance_calcul) ) );
  }
 
 // on envoie au port BT
@@ -335,12 +373,9 @@ if (output == true){
   // parm 1 RPM
   // parm 2 depression actuel
   // parm 3 degre actuel
- 
-
  // ECU;9999;100;032 // RPM KPA Degre
    SortieBT = "ECU;" + String(engine_rpm_average) + ";" + String(map_pressure_kpa) + ";"+ String(Degree_Avance_calcul) ; 
    Send_to_BT(SortieBT); 
   }
  
  } 
- 
