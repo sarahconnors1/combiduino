@@ -75,17 +75,29 @@ void checkdesordres(){
     //parm 2 nr de carto EEPROM
       carto_eeprom_vers_ram();
     }
-    else if (inputString.startsWith("sndcarto;") ) {//envoie la carto eeprom au controleur
+    else if (inputString.startsWith("sndcarto;") ) {//envoie la carto eeprom => IPHONE
       //parm 1 nr de carto EEPROM
       send_carto_iphone();
     }
-    else if (inputString.startsWith("sndkpa;") ) {//envoie l axe KPA eeprom au controleur
+    else if (inputString.startsWith("sndkpa;") ) {//envoie l axe KPA eeprom => IPHONE
       //parm 1 nr de carto EEPROM
       send_kpa_iphone();
     }
-    else if (inputString.startsWith("sndrpm;") ) {//envoie l axe KPA eeprom au controleur
+    else if (inputString.startsWith("gtkpa;") ) {//envoie l axe KPA iphone => ECU
+      //parm 1 nr de carto EEPROM
+      // parm 2 point kpa
+      // parm 3 valeur
+      get_kpa_iphone();
+    }
+    else if (inputString.startsWith("sndrpm;") ) {//envoie l axe KPA eeprom => I PHONE
       //parm 1 nr de carto EEPROM
       send_rpm_iphone();
+    }
+    else if (inputString.startsWith("gtrpm;") ) {//envoie l axe RPM iphone => ECU
+      //parm 1 nr de carto EEPROM
+      // parm 2 point rpm
+      // parm 3 valeur
+      get_rpm_iphone();
     }
     else if (inputString.startsWith("gt1") ) {//envoie le setting a l'iphone
       //parm retour carto demarrage 
@@ -137,8 +149,6 @@ void checkdesordres(){
 //---------------------------------------
 //  GESTION DES COMMANDES
 //---------------------------------------
-
-
 
 
 //-----------------------------------------------------------------
@@ -246,25 +256,6 @@ void changement_carto_ram(){
   }
 }
 
-// changementd'un point de carto X en RAM
-void changement_point_carto_ram(){
-  String carto="1";
-  String point_rpm = "0";
-  String point_kpa = "0";
-  String degre = "0";
-  
-  carto = getValue(inputString, ';', 1) ; // 1er parametre
-  point_rpm = getValue(inputString, ';', 2) ; // 2er parametre
-  point_kpa = getValue(inputString, ';', 3) ; // 3er parametre
-  degre = getValue(inputString, ';', 4) ; // 4er parametre
-  
-  if ( (carto.toInt() >0) && (carto.toInt() <= nombre_carto_max) && (point_rpm.toInt() <= nombre_point_RPM -1) && (point_kpa.toInt() <= nombre_point_DEP -1) && (degre.toInt() >= 0 ) ){
-   ignition_map[(nombre_point_DEP*( carto.toInt() - 1 )) + point_kpa.toInt()] [point_rpm.toInt()] = degre.toInt();
-    debug("chgt point kpa " + String((nombre_point_DEP* (carto.toInt() -1) ) + point_kpa.toInt() ) + "|rpm " + String(point_rpm.toInt() ) + "degre : " + degre );
-  }else{
-    debug("ordre invalid");
-  }
-}
 
 
 // Ecriture de la carto X en RAM vers carto Y EEPROM
@@ -357,16 +348,86 @@ void send_rpm_iphone(){
   }
 }
 
+//-------------------------------------------------
+// Reception des donnée de carto , axes RPM & Kpa
+//     IPHONE ===>> ECU
+//------------------------------------------------
 
+// envoi de point KPA IPHONE => ECU
+void get_kpa_iphone(){
+  int adresse = 0;
+  int nr_carto = 0;
+  String carto="1";
+  String point_kpa = "0";
+  String kpa = "0";
+  
+  carto = getValue(inputString, ';', 1) ; // 1er parametre
+  point_kpa = getValue(inputString, ';', 2) ; // 3er parametre
+  kpa = getValue(inputString, ';', 3) ; // 4er parametre
+  
+  if ( (carto.toInt() >0) && (carto.toInt() <= nombre_carto_max)  && (point_kpa.toInt() <= nombre_point_DEP -1) && (kpa.toInt() >= 0 ) ){
+    pressure_axis[carto.toInt()][point_kpa.toInt()] = kpa.toInt();  // on ecrit en RAM
+    
+    nr_carto = carto.toInt(); 
+    nr_carto-- ; // car la carto 1 -> pas de décalage
+    adresse = (nr_carto * taille_carto ) + debut_kpa + debut_eeprom; // on retrouve l'adresse du début de la ligne a écrirr
+    EEPROM.write(adresse + point_kpa.toInt() * nbr_byte_par_int,  kpa.toInt() ); // on ecrit en EEPROM
+  }
+}
+// envoi de point RPM IPHONE => ECU
+void get_rpm_iphone(){
+  int adresse = 0;
+  int nr_carto = 0;
+  String carto="1";
+  String point_rpm = "0";
+  String rpm = "0";
+  
+  carto = getValue(inputString, ';', 1) ; // 1er parametre
+  point_rpm = getValue(inputString, ';', 2) ; // 3er parametre
+  rpm = getValue(inputString, ';', 3) ; // 4er parametre
+  
+  if ( (carto.toInt() >0) && (carto.toInt() <= nombre_carto_max)  && (point_rpm.toInt() <= nombre_point_RPM -1) && (rpm.toInt() >= 0 ) ){
+    rpm_axis[carto.toInt()][point_rpm.toInt()] = rpm.toInt();  // on ecrit en RAM
+    
+    nr_carto = carto.toInt(); 
+    nr_carto-- ; // car la carto 1 -> pas de décalage
+    adresse = (nr_carto * taille_carto) + debut_rpm + debut_eeprom; // on retrouve l'adresse du début de la ligne a écrirr
+    EEPROMWriteInt(adresse + point_rpm.toInt() * 2, rpm.toInt() ); // on ecrit des vrai Int sur 2 Bytes
+  }
+}
+
+// changementd'un point de carto X en RAM
+void changement_point_carto_ram(){
+  String carto="1";
+  String point_rpm = "0";
+  String point_kpa = "0";
+  String degre = "0";
+  
+  carto = getValue(inputString, ';', 1) ; // 1er parametre
+  point_rpm = getValue(inputString, ';', 2) ; // 2er parametre
+  point_kpa = getValue(inputString, ';', 3) ; // 3er parametre
+  degre = getValue(inputString, ';', 4) ; // 4er parametre
+  
+  if ( (carto.toInt() >0) && (carto.toInt() <= nombre_carto_max) && (point_rpm.toInt() <= nombre_point_RPM -1) && (point_kpa.toInt() <= nombre_point_DEP -1) && (degre.toInt() >= 0 ) ){
+   ignition_map[(nombre_point_DEP*( carto.toInt() - 1 )) + point_kpa.toInt()] [point_rpm.toInt()] = degre.toInt();
+    debug("chgt point kpa " + String((nombre_point_DEP* (carto.toInt() -1) ) + point_kpa.toInt() ) + "|rpm " + String(point_rpm.toInt() ) + "degre : " + degre );
+  }else{
+    debug("ordre invalid");
+  }
+}
+
+
+//-----------------------------------------------------
 //------------Envoi de donnée dans le port serie / BT
+//-----------------------------------------------------
 void gestionsortie(){
 String SortieBT;
 
 // on envoie au port serie pour debug
- if (debugging == true && 1==2 ){
+ //if (debugging == true && 1==2 ){
 // if (debugging == true  ){
-  debug("RPM :" +String(engine_rpm_average)++ "MAP :" + String(map_pressure_kpa) + "DEG :"+ String(Degree_Avance_calcul) ) );
- }
+//  debug("RPM :" +String(engine_rpm_average)+ " MAP :" + String(map_pressure_kpa) + " DEG :"+ String(Degree_Avance_calcul) + " MINKPA :"+String(min_pressure_kpa_recorded) ) ;
+// }
 
 // on envoie au port BT
 if (output == true){
