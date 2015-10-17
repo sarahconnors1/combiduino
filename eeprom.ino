@@ -32,20 +32,19 @@
 //-------------------------------------------------
 // ecriture de la carto en  RAM --> eeprom
 void writecarto_ram_eeprom(int carto_ram , int carto_eeprom) {
-  int ligne;
   int offset = 0; // nr de ligne dans le tableau total
  
  // on ecrit les axe RPM et KPA 
    write_ram_eeprom_kpa(carto_ram, carto_eeprom);
    write_ram_eeprom_rpm(carto_ram, carto_eeprom);
 
-  carto_ram--; //car carto 1 -> pas de décalage
+  carto_ram--; //car carto 1 -> pas de dÃ©calage
   for (int nr_ligne = 0; nr_ligne < nombre_point_DEP; nr_ligne++) { // on parcout les ligne de la carto
     offset = nr_ligne + (nombre_point_DEP * carto_ram); // calcul du pointeur de ligne de la MAP
     for (int nr_RPM = 0; nr_RPM < nombre_point_RPM; nr_RPM++) { // on parcout les colonnes de la carto
       EEPROM_lignecarto[nr_RPM] = ignition_map [offset] [nr_RPM]; // on rempli le tableau Temporaire
     }
-    writeeepromline(nr_ligne, carto_eeprom); // on écrit dans l'EEPROM la ligne correspondante
+    writeeepromline(nr_ligne, carto_eeprom); // on Ã©crit dans l'EEPROM la ligne correspondante
   }
 }
 
@@ -58,7 +57,7 @@ void writecarto_eeprom_ram(int carto_ram , int carto_eeprom) {
    write_eeprom_ram_kpa(carto_ram, carto_eeprom);
    write_eeprom_ram_rpm(carto_ram, carto_eeprom);
   
-  carto_ram--; //car carto 1 -> pas de décalage
+  carto_ram--; //car carto 1 -> pas de dÃ©calage
 
   for (int nr_ligne = 0; nr_ligne < nombre_point_DEP; nr_ligne++) { // on parcout les ligne de la carto EEPROM
     offset = nr_ligne + (nombre_point_DEP * carto_ram); // calcul du pointeur de ligne en RAM de la MAP
@@ -84,8 +83,8 @@ void writeeepromline(int nr_ligne, int nr_carto) {
   if ( (nr_ligne > eeprom_nombre_max_ligne) || (nr_carto > eeprom_nombre_max_carto ) ) {
     return;
   }
-  nr_carto-- ; // car la carto 1 -> pas de décalage
-  adresse = (nr_carto * taille_carto)  + (nr_ligne * nbr_byte_par_ligne) + debut_eeprom; // on retrouve l'adresse du début de la ligne a écrirr
+  nr_carto-- ; // car la carto 1 -> pas de dÃ©calage
+  adresse = (nr_carto * taille_carto)  + (nr_ligne * nbr_byte_par_ligne) + debut_eeprom; // on retrouve l'adresse du dÃ©but de la ligne a Ã©crirr
   for (int offset = 0; offset < nombre_point_RPM; offset++) { // offset = la
     EEPROM.write(adresse + offset * nbr_byte_par_int,  EEPROM_lignecarto[offset] ); // on lit tout les points
   }
@@ -100,8 +99,8 @@ void readeepromline(int nr_ligne, int nr_carto) {
   if ( (nr_ligne > eeprom_nombre_max_ligne) || (nr_carto > eeprom_nombre_max_carto ) ) {
     return;
   }
-  nr_carto-- ; // car la carto 1 -> pas de décalage
-  adresse = (nr_carto * taille_carto)  + (nr_ligne * nbr_byte_par_ligne) + debut_eeprom; // on retrouve l'adresse du début de la ligne a écrirr
+  nr_carto-- ; // car la carto 1 -> pas de dÃ©calage
+  adresse = (nr_carto * taille_carto)  + (nr_ligne * nbr_byte_par_ligne) + debut_eeprom; // on retrouve l'adresse du dÃ©but de la ligne a Ã©crirr
   for (int offset = 0; offset < nombre_point_RPM; offset++) { // offset = la
     EEPROM_lignecarto[offset] = EEPROM.read(adresse + offset * nbr_byte_par_int ); // on lit tout les points
   }
@@ -140,8 +139,8 @@ void writeeepromlinekpa(int nr_carto) {
   int adresse = 0;
   if   (nr_carto > eeprom_nombre_max_carto){return;} // check
 
-  nr_carto-- ; // car la carto 1 -> pas de décalage
-  adresse = (nr_carto * taille_carto ) + debut_kpa + debut_eeprom; // on retrouve l'adresse du début de la ligne a écrirr
+  nr_carto-- ; // car la carto 1 -> pas de dÃ©calage
+  adresse = (nr_carto * taille_carto ) + debut_kpa + debut_eeprom; // on retrouve l'adresse du dÃ©but de la ligne a Ã©crirr
   for (int offset = 0; offset < nombre_point_DEP; offset++) { // offset = la
     EEPROM.write(adresse + offset * nbr_byte_par_int,  EEPROM_ligneKPA[offset] ); // on lit tout les points
   }
@@ -153,8 +152,8 @@ void readeepromlinekpa(int nr_carto) {
   int adresse = 0;
   if  (nr_carto > eeprom_nombre_max_carto)  {return;  } // Check
   
-  nr_carto-- ; // car la carto 1 -> pas de décalage
-  adresse = (nr_carto * taille_carto) + debut_kpa + debut_eeprom; // on retrouve l'adresse du début de la ligne a écrirr
+  nr_carto-- ; // car la carto 1 -> pas de dÃ©calage
+  adresse = (nr_carto * taille_carto) + debut_kpa + debut_eeprom; // on retrouve l'adresse du dÃ©but de la ligne a Ã©crirr
   for (int offset = 0; offset < nombre_point_DEP; offset++) { // offset = la
     EEPROM_ligneKPA[offset] = EEPROM.read(adresse + offset * nbr_byte_par_int ); // on lit tout les points
   }
@@ -193,8 +192,8 @@ void writeeepromlinerpm(int nr_carto) {
   int adresse = 0;
   if   (nr_carto > eeprom_nombre_max_carto){return;} // check
 
-  nr_carto-- ; // car la carto 1 -> pas de décalage
-  adresse = (nr_carto * taille_carto) + debut_rpm + debut_eeprom; // on retrouve l'adresse du début de la ligne a écrirr
+  nr_carto-- ; // car la carto 1 -> pas de dÃ©calage
+  adresse = (nr_carto * taille_carto) + debut_rpm + debut_eeprom; // on retrouve l'adresse du dÃ©but de la ligne a Ã©crirr
   for (int offset = 0; offset < nombre_point_RPM; offset++) { // offset = la
     EEPROMWriteInt(adresse + offset * 2, EEPROM_ligneRPM[offset]); // on ecrit des vrai Int sur 2 Bytes
   }
@@ -206,9 +205,9 @@ void readeepromlinerpm(int nr_carto) {
   int adresse = 0;
   if  (nr_carto > eeprom_nombre_max_carto)  {return;  } // Check
   
-  nr_carto-- ; // car la carto 1 -> pas de décalage
-  adresse = (nr_carto *taille_carto) + debut_rpm + debut_eeprom; // on retrouve l'adresse du début de la ligne a écrirr
-  for (int offset = 0; offset < nombre_point_DEP; offset++) { // offset = la
+  nr_carto-- ; // car la carto 1 -> pas de dÃ©calage
+  adresse = (nr_carto *taille_carto) + debut_rpm + debut_eeprom; // on retrouve l'adresse du dÃ©but de la ligne a Ã©crirr
+  for (int offset = 0; offset < nombre_point_RPM; offset++) { // offset = la
     EEPROM_ligneRPM[offset] =EEPROMReadInt(adresse + offset * 2)  ; // on lit tout les points avec des vrais Int donc 2 bytes
   }
 }
@@ -220,12 +219,12 @@ void readeepromlinerpm(int nr_carto) {
 //------------------------------------------------------------------
 
 void init_de_eeprom() {
-  // on génére les 5 MAP avec  les MAP par defaut
+  // on gÃ©nÃ©re les 5 MAP avec  les MAP par defaut
   for (int carto = 1; carto <= nombre_carto_max; carto++) {
     writecarto_ram_eeprom(carto , carto);
   }
   EEPROM.write(eprom_carto_actuel, 1); // MAP en cours = 1
-  EEPROM.write(eprom_init, 100); // init effectué
+  EEPROM.write(eprom_init, 100); // init effectuÃ©
   for (int i = 0; i <=10; i++) {
   EEPROM.write(eprom_nom_BLE + i, BT_name[i]); // Nom du Bluettooth
   }
@@ -307,5 +306,6 @@ debug ("Read EEPROM carto nr " + String(carto));
     correction_degre = 25;
    } 
 }
+
 
 
