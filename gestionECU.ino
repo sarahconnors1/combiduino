@@ -3,19 +3,49 @@
 //-------------------------------------------------------------
 
 
+void calculdelavance(){
+// calcul du nombre de degrÃ© d'avance suivant la map
+// puis pour le saw du dÃ©lai en microseconds
+// puis en tick du timer (1 tick / 0,5 us)
+  
+Degree_Avance_calcul = rpm_pressure_to_spark(engine_rpm_average, map_pressure_kpa);  
+if (fixed == true){                                   
+   map_value_us = 1536 - (25.6 * fixed_advance);
+  }else{
+    if (multispark && engine_rpm_average <= 1400){    // If engine rpm below 1800 and multispark has been set, add 2048us to map_value_us
+        if (first_multispark ){
+           first_multispark = false;
+           map_value_us = 2048;
+        }else{
+          map_value_us = (1536 - (25.6 * Degree_Avance_calcul))+2048; 
+        } 
+    } else{                                                // Otherwise read from map
+       map_value_us = 1536 - (25.6 * Degree_Avance_calcul);
+    }
+  }
+if (map_value_us < 64){                                // If map_value_us is less than 64 (smallest EDIS will accept), set map_value_us to 64us
+    map_value_us = 64;
+}
+ tick = map_value_us * 2 ; // pour le timer  
+
+}
+
+
+
+
 // gestion de la depression moyenne
 void gestiondepression(){
-  readings[current_index] = analogRead(MAP_pin);       
-  current_index++;              
+  totalKPA = totalKPA + analogRead(MAP_pin);       
+  current_indexKPA++;              
  
  // on refait la moyenne des x dernieres mesures
- if (current_index >= numReadings ){              
-     current_index = 0;total = 0;   
-      for (int thisReading = 0; thisReading < numReadings; thisReading++) {total = total + readings[thisReading];  }  // on fait la somme 
-     manifold_pressure = total / numReadings;   //on fait la moyenne 
+ if (current_indexKPA >= numReadingsKPA ){              
+     manifold_pressure = totalKPA / numReadingsKPA;   //on fait la moyenne 
      map_pressure_kpa = map(manifold_pressure,0,correction_pressure,0,101);  // on converti la moyenne en KPA
     newvalue=true;
- if (map_pressure_kpa < min_pressure_kpa_recorded){min_pressure_kpa_recorded = map_pressure_kpa;} // on log le mini enregistré
+ if (map_pressure_kpa < min_pressure_kpa_recorded){min_pressure_kpa_recorded = map_pressure_kpa;} // on log le mini enregistrÃ©
+ 
+ current_indexKPA = 0;totalKPA = 0;  // on remet a 0 pour prochaine lecture
  }
 }
 //-------------------------------------------- PIP signal interupt --------------------------------------------// 
@@ -28,7 +58,12 @@ void pip_interupt()  {
     newvalue=true;
     timeold = micros();
   }
-    generate_SAW(Degree_Avance_calcul);                                // Generate SAW avec le calcul precedent
+  
+  // gestion dy cylindre en cours d'allumage
+  cylindre_en_cours++;
+  if (cylindre_en_cours>4){cylindre_en_cours=1;}
+  
+  generate_SAW();                                // Generate SAW avec le calcul precedent
 
 }
 
@@ -44,7 +79,7 @@ int decode_rpm(int rpm_) {
        // retrouve la valeur inferieur 
        while(rpm_ > rpm_axis[carto_actuel][map_rpm]){map_rpm++;} // du while
        if (map_rpm > 0){map_rpm--;}
-   }
+     }
    point_RPM_actuel = map_rpm + 1;
     return map_rpm;
   }
@@ -82,37 +117,45 @@ int rpm_pressure_to_spark(int rpm, int pressure){
 }
 
 //-------------------------------------------- Function to generate SAW signal to return to EDIS --------------------------------------------//
-int generate_SAW(int advance_degrees){
-if (fixed == true){                                   
-   map_value_us = 1536 - (25.6 * fixed_advance);
-  }else{
-    if (multispark && engine_rpm_average <= 1200){    // If engine rpm below 1800 and multispark has been set, add 2048us to map_value_us
-        if (first_multispark ){
-           first_multispark = false;
-           map_value_us = 2048;
-        }else{
-          map_value_us = (1536 - (25.6 * advance_degrees))+2048; 
-        } 
-    } else{                                                // Otherwise read from map
-       map_value_us = 1536 - (25.6 * advance_degrees);
-    }
-  }
-  
-  if (map_value_us < 64){                                // If map_value_us is less than 64 (smallest EDIS will accept), set map_value_us to 64us
-    map_value_us = 64;
-  }
-  
- /* 
+void generate_SAW(){
+ 
   // on envoie le SAW
- // 
-*/
-// attente 10 degre pas nécessaire ?
-  int code_delay = 50;
-  long ten_ATDC_delay = (((60000000/engine_rpm_average)/36)-code_delay);
-  delayMicroseconds(ten_ATDC_delay);
   digitalWrite(SAW_pin,HIGH);                                 // send output to logic level HIGH (5V)
-  delayMicroseconds(map_value_us);                            // hold HIGH for duration of map_value_us
-  digitalWrite(SAW_pin,LOW); 
+  
+  ignition_on = true;
+  
+  // gestion du timer 5 pour arreter le SAW
+  // initialisation du scheduler
+  initialiseSchedulers();
 
+  OCR5B = TCNT5 + tick ; // on declenche l 'interruption dans x tick
+  TIMSK5 |= (1 << OCIE5B); //Turn on the B compare unit (ie turn on the interrupt)
 }
+
+
+void initialiseSchedulers()
+  {   //Ignition Schedules, which uses timer 5
+   TCCR5B = 0x00;          //Disbale Timer5 while we set it up
+   TIFR5  = 0x00;          //Timer5 INT Flag Reg: Clear Timer Overflow Flag
+   TCCR5A = 0x00;          //Timer5 Control Reg A: Wave Gen Mode normal
+   TCCR5B = (1 << CS51);   //Timer5 Control Reg B: Timer Prescaler set to 8  
+}
+
+ISR(TIMER5_COMPB_vect) //Timer 5 B pour arreter le SAW
+  { 
+    digitalWrite(SAW_pin,LOW);    // on arrte le saw
+    TIFR5  = 0x00;          //Timer5 INT Flag Reg: Clear Timer Overflow Flag 
+    TIMSK5 &= ~(1 << OCIE5B); //Turn off Timer
+ ignition_on = false;  
+ } 
+   
+   
+ 
+// attente 10 degre pas nÃ©cessaire ?
+//  int code_delay = 50;
+//  long ten_ATDC_delay = (((60000000/engine_rpm_average)/36)-code_delay);
+//  delayMicroseconds(ten_ATDC_delay);
+  //delayMicroseconds(map_value_us);                            // hold HIGH for duration of map_value_us
+ //digitalWrite(SAW_pin,LOW); 
+
  
