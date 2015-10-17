@@ -1,0 +1,104 @@
+#if (KNOCK == 1)
+
+#ifndef cbi
+#define cbi(sfr, bit) (_SFR_BYTE(sfr) &= ~_BV(bit))
+#endif
+#ifndef sbi
+#define sbi(sfr, bit) (_SFR_BYTE(sfr) |= _BV(bit))
+#endif
+
+
+void fhtcylindre() {
+long freq = 38000; 
+ 
+ ADCSRA = B11000101; //freq /32 -> 38000 hz
+ ADMUX = B11000001; //on lit pin A1
+   
+  for (int i = 0 ; i < FHT_N ; i++) { 
+    while (bit_is_set(ADCSRA, ADSC)); // on attend que adc ai fini
+    ADCSRA = B11000101; // on le relance
+    byte m = ADCL; // fetch adc data
+    byte j = ADCH;
+    int k = (j << 8) | m; // form into an int
+    k -= 0x0200; // form into a signed int
+    k <<= 6; // form into a 16b signed int
+    fht_input[i] = k; // put real data into bins
+    
+  }
+
+  fht_window(); // window the data for better frequency response
+  fht_reorder(); // reorder the data before doing the fht
+  fht_run(); // process the data in the fht
+  fht_mag_lin8(); // take the output of the fht
+ 
+ count_knock++;
+ total_knock20 = total_knock20 + fht_lin_out8[20];
+ total_knock21 = total_knock21 + fht_lin_out8[21];
+ total_knock22 = total_knock22 + fht_lin_out8[22];
+ 
+ // on fait la moyenne
+ if (count_knock >= count_knock_max ){
+ knock_moyen20 = total_knock20 / count_knock_max;
+ knock_moyen21 = total_knock20 / count_knock_max;
+ knock_moyen22 = total_knock20 / count_knock_max;
+ total_knock20 = 0;
+ total_knock21 = 0;
+ total_knock22 = 0;
+ count_knock = 0;
+ debug(" bin 20 : "+String(knock_moyen20) + " bin 20 : "+String(knock_moyen21) + " bin 20 : "+String(knock_moyen21));
+ 
+ }
+
+}
+
+   // si on divise par 32
+    // 16000000 Hz / 32 = 500 KHz, inside the desired 50-200 KHz range.
+   // Each conversion in AVR takes 13 ADC clocks so 500 KHz /13 = 38500 Hz.
+   
+   // pour prendre 128 mesures il faut donc 1000000 (µs ) X 128 / 38000 -> 3300 µs 3,3ms
+ 
+
+// freq = 38000  N = 128
+//fht_lin_out8[0] = first bin magnitude (0hz -> 38000/128) = 0 -> 300
+//fht_lin_out8[1] = second bin magnitude (38000/N -> 2 X 38000/128) = 300 -> 600
+//fht_lin_out8[1] = second bin magnitude (38000/N -> 2 X 38000/128) = 300 -> 600
+
+//fht_lin_out8[19] = second bin magnitude (19 *38000/N -> 20 X 38000/128) = 300 -> 600
+
+// 6000 = 38000 x bin / 128 -> 6000 X 128 / 38000 = bin -> Bin 19 / 20 / 21 a verifier
+/*
+Bin     De HZ  a HZ
+0		
+1	296	593
+2	593	890
+3	890	1187
+4	1187	1484
+5	1484	1781
+6	1781	2078
+7	2078	2375
+8	2375	2671
+9	2671	2968
+10	2968	3265
+11	3265	3562
+12	3562	3859
+13	3859	4156
+14	4156	4453
+15	4453	4750
+16	4750	5046
+17	5046	5343
+18	5343	5640
+19	5640	5937
+20	5937	6234
+21	6234	6531
+22	6531	6828
+23	6828	7125
+24	7125	7421
+25	7421	7718
+26	7718	8015
+*/
+
+
+
+
+
+#endif
