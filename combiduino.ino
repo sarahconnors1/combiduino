@@ -1,9 +1,24 @@
 #pragma GCC optimize ("-O2")
+
+// pour le Knock
+#define LIN_OUT8 1 // pour linaire output 8b
+#define SCALE 2 // 
+#define LOG_OUT 0 // use the log output function
+#define FHT_N 128 // set to 256 point fht
+
+#define KNOCK 0 // mettre a 1 pour gerer le knock sensor sinon 0
+// 
 //-------------------------------------------- Include Files --------------------------------------------//
 #include <EEPROM.h>
 #include <SPI.h>
 #include <boards.h>
 #include <RBL_nRF8001.h>
+
+#if (KNOCK == 1)
+#include <fht.h>
+#endif
+
+
 //-------------------------------------------- Global variables --------------------------------------------//
 
 // declaration du debugging
@@ -33,15 +48,16 @@ volatile int engine_rpm;            // vitesse actuelle
 volatile float map_value_us;                 // duree du SAW EDIS en microseconds
 int rev_limit = 4550;               // Max tour minute
 int rev_mini = 500; // min tour minute
-volatile int Degree_Avance_calcul = 10;              // Degree_Avance_calculé suivant la cartographie a10 par defaut pour demmarragee
+volatile int Degree_Avance_calcul = 10;              // Degree_Avance_calculÃ© suivant la cartographie a10 par defaut pour demmarragee
 boolean output = true;
 boolean fixed = false;              // declare whether to use fixed advance values
 int fixed_advance = 15;             // Avance fixe
 boolean multispark = true;         // multispark
 boolean first_multispark = true;         // 1er allumage en multispark
 int correction_degre = 0; // correction de la MAP
+volatile unsigned long tick = 0; // nombre de tick du timer pour le saw
 
-volatile boolean newvalue = true;  // check si des nouvelles valeurs RPM/pression ont ete calculés
+volatile boolean newvalue = true;  // check si des nouvelles valeurs RPM/pression ont ete calculÃ©s
 //gestion simplifie des rpm
 volatile unsigned long timeold = 0;
 volatile unsigned int pip_count = 0;
@@ -51,21 +67,34 @@ const unsigned int maxpip_count = 20;  //on fait la moyenne tout les x pip
 unsigned int point_RPM_actuel = 0; // pour la sortie BT
 unsigned int point_KPA_actuel = 0; // pour la sortie BT
 
+// declaration pour le KNOCK
+volatile unsigned int cylindre_en_cours = 1; // cylindre en cours d'allumage
+volatile boolean ignition_on = false; // gere si le SAW est envoyé non terminé
+long total_knock20 = 0;
+long total_knock21 = 0;
+long total_knock22 = 0;
+int count_knock = 0;
+const int count_knock_max = 8;
+long knock_moyen20 = 0;
+long knock_moyen21 = 0;
+long knock_moyen22 = 0;
 
 // variable pression moyenne
-const int numReadings = 10;         // nombre index de pression
-int readings[numReadings];          // Array des pressions
-int current_index = 0;
-unsigned long total = 0;            // ttotal des pressions
+const int numReadingsKPA = 10;         // nombre index de pression
+int current_indexKPA = 0;
+unsigned long totalKPA = 0;            // ttotal des pressions
 unsigned int manifold_pressure = 100;        // pression initial 100kpa= atmos
 int correction_pressure = 400;   // gestion de la valeur du capteur a pression atmo se met a jour lors de lancement
 int map_pressure_kpa;
-int min_pressure_kpa_recorded = 100 ; // log du mini enregistré
+int min_pressure_kpa_recorded = 100 ; // log du mini enregistrÃ©
 
 // variable de loop
-unsigned long time_loop_old = 0;
-int loop_count = 0;
-float loop_frequence = 0;
+unsigned long time_loop = 0;
+unsigned long time_envoi = 0;
+const unsigned long interval_time_envoi = 1000; // ECU / EC1 toute les 1 secondes
+unsigned long time_check_depression = 0;
+unsigned long interval_time_check_depression = 100; // Depression 10 fois / seconde
+
 
 
 
@@ -108,72 +137,62 @@ void setup() {
   pinMode(SAW_pin, OUTPUT);                                                 //  SAW_pin as a digital output
   pinMode(interrupt_X, INPUT);
   digitalWrite (interrupt_X, HIGH);
-//  digitalWrite (interrupt_X, LOW);
 
-
-  for (int thisReading = 0; thisReading < numReadings; thisReading++)       //populate manifold pressure averaging array with zeros
-    readings[thisReading] = 100;
   // on initialise la pression atmospherique
   correction_pressure = analogRead(MAP_pin);
 
 
   // port serie
-  Serial.begin(38400);                                                       // Initialise serial communication at 38400 Baud
+  Serial.begin(115200);                                                       // Initialise serial communication at 38400 Baud
   inputString.reserve(1000);   //reserve 200 bytes for serial input - equates to 25 characters
 
  
-  time_loop_old = millis();
+  time_loop = millis();
 
   // init des cartos si pas deja fait
   if (String(EEPROM.read(eprom_init) )  != "100" ) { init_eeprom = true; }else{init_eeprom = false;} // on lance l'init de l'eeprom si necessaire   
-   init_eeprom = true; // A DE TAGGER POUR INITIALISATION  
-  if (init_eeprom == true) {debug ("Init des MAP EEPROM");init_de_eeprom(); } // on charge les map EEPROM a partir de la RAM
- 
- 
- 
+//---------POUR INIT CARTE -------------------------------  
+  // init_eeprom = true; // A DE TAGGER POUR INITIALISATION 
+// ------------------------------------------------------     
+if (init_eeprom == true) {debug ("Init des MAP EEPROM");init_de_eeprom(); } // on charge les map EEPROM a partir de la RAM
  // lecture des carto
   debug ("Init des MAP RAM");
-  read_eeprom(); // on charge les MAP en RAM a partir de l'eeprom et la dernière MAP utilisée
+  read_eeprom(); // on charge les MAP en RAM a partir de l'eeprom et la derniÃ¨re MAP utilisÃ©e
   
    // Initialisationdu BT
   ble_set_name(BT_name);
-  ble_begin();
-
-  
+  ble_begin();  
   debug ("ready!");
 }
 
 
 //-------------------------------------------- Boucle principal --------------------------------------------//
 void loop() {
-  loop_count++;
+   time_loop = millis();
 
+if (ignition_on == true){ // si allumage en cours non terminé priorité au knock sensor
+  #if (KNOCK == 1)
+    fhtcylindre();
+  #endif  
+  ignition_on = false; // pour ne pas calculer plusieur fois
+}else{
+  // sinon on gere le quotidien
+  
   // check entree serial
   checkdesordres();
 
-  // calcul du nouvel angle d avance si des valeurs ont changés
-  if (newvalue == true) {
-    Degree_Avance_calcul = rpm_pressure_to_spark(engine_rpm_average, map_pressure_kpa);
-    newvalue = false;
-  }
+  // calcul du nouvel angle d avance si des valeurs ont changÃ©s
+  if (newvalue == true) { calculdelavance(); newvalue = false;  }
 
-  // gestions sortie pour module exterieur
-  if ((loop_count == 40) or (loop_count == 60)) {
-    gestionsortie();
-  }
-
-  // recalcul de la dépression
-  gestiondepression();
-
-  // fin de boucle
-  if (loop_count > 100) {
-    loop_count = 0;
-    time_loop_old = millis();
-  }
-
-
-  ble_do_events();
+// puis on gere les fonctions annexe a declencher periodiquement
+  // recalcul de la dÃ©pression
+  if (time_loop - time_check_depression > interval_time_check_depression){gestiondepression();time_check_depression = time_loop;}
+  // gestions sortie pour module exterieur ECU / EC1
+  if (time_loop - time_envoi > interval_time_envoi){gestionsortieECU();ble_do_events();gestionsortieEC1();ble_do_events();time_envoi = time_loop;}
 }
+ble_do_events();
+}
+
 
 
 
