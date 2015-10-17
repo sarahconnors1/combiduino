@@ -11,7 +11,7 @@ void serialEvent() {
  }
  }
 
-//-------------Check des donnée entrante par le port serie-----------------------------
+//-------------Check des donnÃ©e entrante par le port serie-----------------------------
 void checkdesordres(){
   Read_BT(); // lecture du BT
   
@@ -89,7 +89,7 @@ void checkdesordres(){
       // parm 3 valeur
       get_kpa_iphone();
     }
-    else if (inputString.startsWith("sndrpm;") ) {//envoie l axe KPA eeprom => I PHONE
+    else if (inputString.startsWith("sndrpm;") ) {//envoie l axe RPM eeprom => I PHONE
       //parm 1 nr de carto EEPROM
       send_rpm_iphone();
     }
@@ -349,7 +349,7 @@ void send_rpm_iphone(){
 }
 
 //-------------------------------------------------
-// Reception des donnée de carto , axes RPM & Kpa
+// Reception des donnÃ©e de carto , axes RPM & Kpa
 //     IPHONE ===>> ECU
 //------------------------------------------------
 
@@ -369,8 +369,8 @@ void get_kpa_iphone(){
     pressure_axis[carto.toInt()][point_kpa.toInt()] = kpa.toInt();  // on ecrit en RAM
     
     nr_carto = carto.toInt(); 
-    nr_carto-- ; // car la carto 1 -> pas de décalage
-    adresse = (nr_carto * taille_carto ) + debut_kpa + debut_eeprom; // on retrouve l'adresse du début de la ligne a écrirr
+    nr_carto-- ; // car la carto 1 -> pas de dÃ©calage
+    adresse = (nr_carto * taille_carto ) + debut_kpa + debut_eeprom; // on retrouve l'adresse du dÃ©but de la ligne a Ã©crirr
     EEPROM.write(adresse + point_kpa.toInt() * nbr_byte_par_int,  kpa.toInt() ); // on ecrit en EEPROM
   }
 }
@@ -390,8 +390,8 @@ void get_rpm_iphone(){
     rpm_axis[carto.toInt()][point_rpm.toInt()] = rpm.toInt();  // on ecrit en RAM
     
     nr_carto = carto.toInt(); 
-    nr_carto-- ; // car la carto 1 -> pas de décalage
-    adresse = (nr_carto * taille_carto) + debut_rpm + debut_eeprom; // on retrouve l'adresse du début de la ligne a écrirr
+    nr_carto-- ; // car la carto 1 -> pas de dÃ©calage
+    adresse = (nr_carto * taille_carto) + debut_rpm + debut_eeprom; // on retrouve l'adresse du dÃ©but de la ligne a Ã©crirr
     EEPROMWriteInt(adresse + point_rpm.toInt() * 2, rpm.toInt() ); // on ecrit des vrai Int sur 2 Bytes
   }
 }
@@ -418,16 +418,15 @@ void changement_point_carto_ram(){
 
 
 //-----------------------------------------------------
-//------------Envoi de donnée dans le port serie / BT
+//------------Envoi de donnÃ©e dans le port serie / BT
 //-----------------------------------------------------
-void gestionsortie(){
+void gestionsortieECU(){
 String SortieBT;
-
 // on envoie au port serie pour debug
- //if (debugging == true && 1==2 ){
-// if (debugging == true  ){
-//  debug("RPM :" +String(engine_rpm_average)+ " MAP :" + String(map_pressure_kpa) + " DEG :"+ String(Degree_Avance_calcul) + " MINKPA :"+String(min_pressure_kpa_recorded) ) ;
-// }
+if (debugging == true && 1==2 ){
+//if (debugging == true  ){
+  debug("RPM :" +String(engine_rpm_average)+ " MAP :" + String(map_pressure_kpa) + " DEG :"+ String(Degree_Avance_calcul) + " MAP_US :"+String(map_value_us) ) ;
+}
 
 // on envoie au port BT
 if (output == true){
@@ -440,3 +439,23 @@ if (output == true){
   }
  
  } 
+ 
+void gestionsortieEC1(){
+String SortieBT;
+// on envoie au port serie pour debug
+
+// on envoie au port BT
+if (output == true){
+  // parm 1 carto actuelle
+  // parm 2 correction actuel
+  // parm 3 libre knock
+  // parm 4 libre knock
+  
+   SortieBT = "EC1;" + String(carto_actuel) + ";" + String(correction_degre) +";"+String(knock_moyen20)+";" + String(knock_moyen21) ; 
+ 
+ 
+   Send_to_BT(SortieBT); 
+  }
+ 
+ } 
+
