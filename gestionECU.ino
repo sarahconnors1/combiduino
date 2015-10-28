@@ -12,7 +12,7 @@ Degree_Avance_calcul = rpm_pressure_to_spark(engine_rpm_average, map_pressure_kp
 if (fixed == true){                                   
    map_value_us = 1536 - (25.6 * fixed_advance);
   }else{
-    if (multispark && engine_rpm_average <= 1400){    // If engine rpm below 1800 and multispark has been set, add 2048us to map_value_us
+    if (multispark && engine_rpm_average <= 1200){    // If engine rpm below 1800 and multispark has been set, add 2048us to map_value_us
         if (first_multispark ){
            first_multispark = false;
            map_value_us = 2048;
@@ -26,7 +26,7 @@ if (fixed == true){
 if (map_value_us < 64){                                // If map_value_us is less than 64 (smallest EDIS will accept), set map_value_us to 64us
     map_value_us = 64;
 }
- tick = map_value_us * 2 ; // pour le timer  
+ tick = map_value_us * 2; // pour le timer  
 
 }
 
@@ -118,37 +118,34 @@ int rpm_pressure_to_spark(int rpm, int pressure){
 
 //-------------------------------------------- Function to generate SAW signal to return to EDIS --------------------------------------------//
 void generate_SAW(){
- 
-  // on envoie le SAW
+   digitalWrite(pin_ignition,HIGH);
+  
+  delayMicroseconds(200); // on attend un peu 
+// on envoie le SAW
   digitalWrite(SAW_pin,HIGH);                                 // send output to logic level HIGH (5V)
-  
   ignition_on = true;
-  
-  // gestion du timer 5 pour arreter le SAW
-  // initialisation du scheduler
-  initialiseSchedulers();
 
-  OCR5B = TCNT5 + tick ; // on declenche l 'interruption dans x tick
-  TIMSK5 |= (1 << OCIE5B); //Turn on the B compare unit (ie turn on the interrupt)
+// gestion du timer 5 pour arreter le SAW
+  TCCR5A = 0;
+  TCCR5B = 0;
+  TCNT5  = 0;
+
+  OCR5A = tick;            // compare match register 
+  TCCR5B |= (1 << WGM52);   // CTC mode
+  TCCR5B |= (1 << CS51);    // 8 prescaler 
+  TIMSK5 |= (1 << OCIE5A);  // enable timer compare interrupt
 }
 
 
-void initialiseSchedulers()
-  {   //Ignition Schedules, which uses timer 5
-   TCCR5B = 0x00;          //Disbale Timer5 while we set it up
-   TIFR5  = 0x00;          //Timer5 INT Flag Reg: Clear Timer Overflow Flag
-   TCCR5A = 0x00;          //Timer5 Control Reg A: Wave Gen Mode normal
-   TCCR5B = (1 << CS51);   //Timer5 Control Reg B: Timer Prescaler set to 8  
-}
-
-ISR(TIMER5_COMPB_vect) //Timer 5 B pour arreter le SAW
-  { 
+ISR(TIMER5_COMPA_vect){ 
+//Timer 5 B pour arreter le SAW
+    digitalWrite(pin_ignition,LOW);
     digitalWrite(SAW_pin,LOW);    // on arrte le saw
-    TIFR5  = 0x00;          //Timer5 INT Flag Reg: Clear Timer Overflow Flag 
-    TIMSK5 &= ~(1 << OCIE5B); //Turn off Timer
+   TCCR5A = 0x00;          //Disbale Timer5 while we set it up
+   TCCR5B = 0x00;          //Disbale Timer5 while we set it up
+   TCCR5C = 0x00;          //Disbale Timer5 while we set it up
  ignition_on = false;  
  } 
-   
    
  
 // attente 10 degre pas nÃ©cessaire ?
@@ -158,4 +155,6 @@ ISR(TIMER5_COMPB_vect) //Timer 5 B pour arreter le SAW
   //delayMicroseconds(map_value_us);                            // hold HIGH for duration of map_value_us
  //digitalWrite(SAW_pin,LOW); 
 
+//delayMicroseconds(map_value_us);                            // hold HIGH for duration of map_value_us
+//digitalWrite(SAW_pin,LOW); 
  
