@@ -5,6 +5,7 @@
 void debug(String str){if (debugging == true){ Serial.println(str);} }
 
 
+
 // gestion du parsing
 String getValue(String data, char separator, int index){
     // spliting a string and return the part nr index
