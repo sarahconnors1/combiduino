@@ -10,10 +10,12 @@
 // 2 = debug 0/1
 // 3 = multispark 0/1
 // 4,5 => avance initiale
+// 6 = gestion knock sensor 0/1 
 // 10 -> 20 nom du BLE
 // 21,22 -> REV MAX
 // 23,24 -> REV MIN
 
+//25 -> 48 -> knock moyen
 
 
 // 50 -----> 441 carto 1 (23*17 = 391)
@@ -22,6 +24,15 @@
 // 550 ----->941 carto 2
 // 950 ----> 969 kpa 2
 // 970 ----> 1050 rpm 2
+// 1050 ----->1441 carto 3
+// 1450 ----> 1469 kpa 3
+// 1470 ----> 1450 rpm 3
+// 1550 ----->1941 carto 4
+// 1950 ----> 1969 kpa 4
+// 1970 ----> 2050 rpm 4
+// 2050 ----->2441 carto 5
+// 2450 ----> 2469 kpa 5
+// 2470 ----> 2550 rpm 5
 //etc
 
 
@@ -265,6 +276,22 @@ debug ("Read EEPROM carto nr " + String(carto));
          debugging = true;  
        }
   }
+
+// knock sensor
+  int knocktemp = 0;
+  knocktemp = EEPROM.read(eprom_knock);
+  
+  if  (knocktemp > 1 ){
+    EEPROM.write(eprom_knock, 1); // knock par defaut a oui
+    knock_active = true;
+   } else{
+     if (knocktemp == 0 ){
+         knock_active = false;
+       }else{
+         knock_active = true; 
+       }
+  }
+  
   
     // multispark
   int mstemp = 0;
