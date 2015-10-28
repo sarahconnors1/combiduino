@@ -10,6 +10,13 @@ void serialEvent() {
    stringComplete = true;                      
  }
  }
+ 
+ void serialEvent3() {
+ while (Serial3.available()) {                    //whilst the serial port is available...
+   inputString3 = Serial3.readStringUntil('\n');   //... read in the string until a new line is recieved
+   stringComplete3 = true;                      
+ }
+ }
 
 //-------------Check des donnÃ©e entrante par le port serie-----------------------------
 void checkdesordres(){
@@ -126,19 +133,40 @@ void checkdesordres(){
       send_setting2_ecu();
     }
     else if (inputString.startsWith("gt3") ) {//envoie le setting a l'iphone
-      //parm retour carto demarrage 
+      //parm retour  
       // multispark 1/0 (oui/non)
       // correction avance
+      // knock actif 1/0
       send_setting3_iphone();
     }
      else if (inputString.startsWith("st3;") ) {//ecrit le nouveau setting dans eeprom 
-      //parm retour carto demarrage 
+      //parm retour 
       // multispark 1/0 (oui/non)
       // correction avance
-      //  exemple "st3;0;3
+      // knock actif 1/0
+      //  exemple "st3;0;3;1
       send_setting3_ecu();
     }
-    
+    else if (inputString.startsWith("initkpa") ) {//re initialise la reference kpa 
+      initpressure();
+      debug("init kpa ok");
+    }
+    else if (inputString.startsWith("recknk on") ) {//record knock moyen 
+      recordknock();
+      debug("record knock");
+    }
+    else if (inputString.startsWith("recknk off") ) {//stop record knock moyen et save en EEPROM 
+      saveknock();
+      debug("save knock");
+    }
+    else if (inputString.startsWith("knk off") ) {//stop gestion du cliquetis 
+      knock_active = false;
+      debug("knock off");
+    }
+    else if (inputString.startsWith("knk on") ) {//stop gestion du cliquetis 
+      knock_active = false;
+      debug("knock off");
+    }
 
    // RAZ c est traite 
      inputString = "";
@@ -200,17 +228,24 @@ void send_setting2_ecu(){
 void send_setting3_ecu(){  
   String ms = "0";
   String avance = "0";
+  String knck = "1";
   ms = getValue(inputString, ';', 1) ; // 1er parametre
   avance = getValue(inputString, ';', 2) ; // 2er parametre
+   knck = getValue(inputString, ';', 3) ; // 3er parametre
 // multispark
    if ( (ms.toInt() >= 0) || (ms.toInt() <= 1) ) {
      EEPROM.write(eprom_ms, ms.toInt()); // debug 
-     multispark = ms.toInt() == 0 ? true : false;
+     multispark = ms.toInt() == 0 ? false : true;
    }
 // correction avance   
    if (avance.toInt() < 25) {
      EEPROMWriteInt(eprom_avance, avance.toInt() ); // rev min
      correction_degre = avance.toInt();
+   }
+   // knock actif
+   if ( (knck.toInt() >= 0) || (knck.toInt() <= 1) ) {
+     EEPROM.write(eprom_adresseknock, knck.toInt()); // debug 
+     knock_active = knck.toInt() == 0 ? false : true;
    }
   
 }
@@ -237,7 +272,7 @@ void send_setting2_iphone() {
 
 // Envoie le setting 3 a l'iphone  
   void send_setting3_iphone() {
-   OutputString = "gt3;" + String(EEPROM.read(eprom_ms)) + ";" + String(EEPROMReadInt(eprom_avance)) ;; 
+   OutputString = "gt3;" + String(EEPROM.read(eprom_ms)) + ";" + String(EEPROMReadInt(eprom_avance)+";" + String(EEPROM.read(eprom_adresseknock))  ) ;; 
         Send_to_BT(OutputString); 
         debug(OutputString);
   }
@@ -266,7 +301,7 @@ void carto_ram_vers_eeprom(){
   cartoeeprom = getValue(inputString, ';', 2) ; // 2eme parametre
   if ( (cartoram.toInt() >0) && (cartoram.toInt() <= nombre_carto_max) && (cartoeeprom.toInt() >0) && (cartoeeprom.toInt() <=eeprom_nombre_max_carto)   ){
      writecarto_ram_eeprom(cartoram.toInt() , cartoeeprom.toInt());
-    debug("carto sauvegarde");
+    debug("carto sauvegarde ram"+ cartoram + "eeprom" + cartoeeprom  );
   }else{
     debug("ordre invalide");
   }
@@ -366,10 +401,10 @@ void get_kpa_iphone(){
   kpa = getValue(inputString, ';', 3) ; // 4er parametre
   
   if ( (carto.toInt() >0) && (carto.toInt() <= nombre_carto_max)  && (point_kpa.toInt() <= nombre_point_DEP -1) && (kpa.toInt() >= 0 ) ){
-    pressure_axis[carto.toInt()][point_kpa.toInt()] = kpa.toInt();  // on ecrit en RAM
-    
     nr_carto = carto.toInt(); 
     nr_carto-- ; // car la carto 1 -> pas de dÃ©calage
+    pressure_axis[nr_carto][point_kpa.toInt()] = kpa.toInt();  // on ecrit en RAM
+    
     adresse = (nr_carto * taille_carto ) + debut_kpa + debut_eeprom; // on retrouve l'adresse du dÃ©but de la ligne a Ã©crirr
     EEPROM.write(adresse + point_kpa.toInt() * nbr_byte_par_int,  kpa.toInt() ); // on ecrit en EEPROM
   }
@@ -387,10 +422,11 @@ void get_rpm_iphone(){
   rpm = getValue(inputString, ';', 3) ; // 4er parametre
   
   if ( (carto.toInt() >0) && (carto.toInt() <= nombre_carto_max)  && (point_rpm.toInt() <= nombre_point_RPM -1) && (rpm.toInt() >= 0 ) ){
-    rpm_axis[carto.toInt()][point_rpm.toInt()] = rpm.toInt();  // on ecrit en RAM
     
     nr_carto = carto.toInt(); 
     nr_carto-- ; // car la carto 1 -> pas de dÃ©calage
+    rpm_axis[nr_carto][point_rpm.toInt()] = rpm.toInt();  // on ecrit en RAM
+  
     adresse = (nr_carto * taille_carto) + debut_rpm + debut_eeprom; // on retrouve l'adresse du dÃ©but de la ligne a Ã©crirr
     EEPROMWriteInt(adresse + point_rpm.toInt() * 2, rpm.toInt() ); // on ecrit des vrai Int sur 2 Bytes
   }
@@ -448,10 +484,10 @@ String SortieBT;
 if (output == true){
   // parm 1 carto actuelle
   // parm 2 correction actuel
-  // parm 3 libre knock
-  // parm 4 libre knock
+  // parm 3 libre knock KNOCK MOYEN
+  // parm 4 libre knock DIFFERENCE actuel - Moyen
   
-   SortieBT = "EC1;" + String(carto_actuel) + ";" + String(correction_degre) +";"+String(knock_moyen20)+";" + String(knock_moyen21) ; 
+   SortieBT = "EC1;" + String(carto_actuel) + ";" + String(correction_degre) +";"+String(var1)+";" + String(var2) ; 
  
  
    Send_to_BT(SortieBT); 
