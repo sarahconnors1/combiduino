@@ -1,22 +1,11 @@
 #pragma GCC optimize ("-O2")
 
-// pour le Knock
-#define LIN_OUT8 1 // pour linaire output 8b
-#define SCALE 2 // 
-#define LOG_OUT 0 // use the log output function
-#define FHT_N 128 // set to 256 point fht
-
-#define KNOCK 0 // mettre a 1 pour gerer le knock sensor sinon 0
-// 
+ 
 //-------------------------------------------- Include Files --------------------------------------------//
 #include <EEPROM.h>
 #include <SPI.h>
 #include <boards.h>
 #include <RBL_nRF8001.h>
-
-#if (KNOCK == 1)
-#include <fht.h>
-#endif
 
 
 //-------------------------------------------- Global variables --------------------------------------------//
@@ -25,11 +14,12 @@
 boolean debugging = true; // a mettre a falsdebuge pour ne pas debugger
 String debugstring = "";
 
+
 //declaration des pins
 int interrupt_X = 3;                // PIP EDIS pin
 int SAW_pin = 13;                   // SAW EDIS pin
 int MAP_pin = A0;                   // depression
-
+int pin_ignition = 12;  // pin du début d'ignition
 //----------------------------
 //declaration bluetooth
 //----------------------------
@@ -37,14 +27,17 @@ int MAP_pin = A0;                   // depression
 const boolean init_BT = true; // pour creer la config BT a mettre a false normalement
 char BT_name [] = "Combiduino";
 String OutputString = "";
+
 //Serial input initailisation
 String inputString = "";            // a string to hold incoming data
 boolean stringComplete = false;     // whether the string is complete
+String inputString3 = "";            // a string to hold incoming data
+boolean stringComplete3 = false;     // whether the string is complete
 
 // ----------------------------
 // declaration pour l ECU
 //-----------------------------
-volatile int engine_rpm;            // vitesse actuelle
+//volatile int engine_rpm;            // vitesse actuelle
 volatile float map_value_us;                 // duree du SAW EDIS en microseconds
 int rev_limit = 4550;               // Max tour minute
 int rev_mini = 500; // min tour minute
@@ -68,16 +61,20 @@ unsigned int point_RPM_actuel = 0; // pour la sortie BT
 unsigned int point_KPA_actuel = 0; // pour la sortie BT
 
 // declaration pour le KNOCK
+long knockvalue[23] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}; // accumulation des valuer de knock
+long knockcount[23] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}; // accumulation des count de knock
+long knockmoyen[23] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}; // accumulation des count moyen
+
 volatile unsigned int cylindre_en_cours = 1; // cylindre en cours d'allumage
 volatile boolean ignition_on = false; // gere si le SAW est envoyé non terminé
-long total_knock20 = 0;
-long total_knock21 = 0;
-long total_knock22 = 0;
+long total_knock = 0;
+long knock_moyen = 0;
 int count_knock = 0;
 const int count_knock_max = 8;
-long knock_moyen20 = 0;
-long knock_moyen21 = 0;
-long knock_moyen22 = 0;
+long var1 = 0;
+long var2 = 0;
+boolean knock_record = false; // enregistrement des valeur normal du capteur
+boolean knock_active = true; // utilisation de la fonction knock
 
 // variable pression moyenne
 const int numReadingsKPA = 10;         // nombre index de pression
@@ -126,25 +123,31 @@ const int eprom_nom_BLE = 10; // emplaceement eeprom du  nom du BLE
 const int eprom_rev_max = 21; // emplaceement eeprom du  REV MAX
 const int eprom_rev_min = 23; // emplaceement eeprom du  REV MIN
 const int eprom_debug = 2; // emplaceement eeprom du  debug
+const int eprom_knock = 6; // emplaceement eeprom du knock sensor
 const int eprom_ms = 3; // emplaceement eeprom du  multispark
 const int eprom_avance = 4; // emplaceement eeprom de avance initiale
+const int eprom_adresseknock = 25; // emplacement eeprom du knock moyen
 boolean init_eeprom = true; // si true on re ecrit les carto au demarrage
 //-------------------------------------------- Initialise Parameters --------------------------------------------//
 void setup() {
-  timeold = 0;
+  // pour ne pas lancer de faux SAW
+  detachInterrupt(1);
+  
 
-  attachInterrupt(1, pip_interupt, FALLING);                                //  interruption PIP signal de l'edis
   pinMode(SAW_pin, OUTPUT);                                                 //  SAW_pin as a digital output
+  pinMode(pin_ignition, OUTPUT); 
   pinMode(interrupt_X, INPUT);
-  digitalWrite (interrupt_X, HIGH);
+ digitalWrite (interrupt_X, HIGH);
 
-  // on initialise la pression atmospherique
-  correction_pressure = analogRead(MAP_pin);
-
-
+ 
   // port serie
-  Serial.begin(115200);                                                       // Initialise serial communication at 38400 Baud
-  inputString.reserve(1000);   //reserve 200 bytes for serial input - equates to 25 characters
+  Serial.begin(115200);  
+  while (!Serial) { ; }// wait for serial port to connect. 
+  
+   Serial3.begin(115200);  
+  while (!Serial3) { ; }// wait for serial port to connect. 
+  
+  inputString.reserve(200);   //reserve 200 bytes for serial input - equates to 25 characters
 
  
   time_loop = millis();
@@ -152,17 +155,24 @@ void setup() {
   // init des cartos si pas deja fait
   if (String(EEPROM.read(eprom_init) )  != "100" ) { init_eeprom = true; }else{init_eeprom = false;} // on lance l'init de l'eeprom si necessaire   
 //---------POUR INIT CARTE -------------------------------  
-  // init_eeprom = true; // A DE TAGGER POUR INITIALISATION 
+ //  init_eeprom = true; // A DE TAGGER POUR INITIALISATION 
 // ------------------------------------------------------     
-if (init_eeprom == true) {debug ("Init des MAP EEPROM");init_de_eeprom(); } // on charge les map EEPROM a partir de la RAM
+if (init_eeprom == true) {debug ("Init des MAP EEPROM");init_de_eeprom();RAZknock(); } // on charge les map EEPROM a partir de la RAM et konco moyen
  // lecture des carto
   debug ("Init des MAP RAM");
   read_eeprom(); // on charge les MAP en RAM a partir de l'eeprom et la derniÃ¨re MAP utilisÃ©e
+  initknock();
   
    // Initialisationdu BT
   ble_set_name(BT_name);
   ble_begin();  
   debug ("ready!");
+ 
+ initpressure();
+
+ // initialisation du PIP interrupt 
+   attachInterrupt(1, pip_interupt, FALLING);                                //  interruption PIP signal de l'edis
+ 
 }
 
 
@@ -170,30 +180,38 @@ if (init_eeprom == true) {debug ("Init des MAP EEPROM");init_de_eeprom(); } // o
 void loop() {
    time_loop = millis();
 
-if (ignition_on == true){ // si allumage en cours non terminé priorité au knock sensor
-  #if (KNOCK == 1)
-    fhtcylindre();
-  #endif  
-  ignition_on = false; // pour ne pas calculer plusieur fois
-}else{
-  // sinon on gere le quotidien
+//chek des valeur de knock
+       getknock();
   
-  // check entree serial
+
+// check entree serial
   checkdesordres();
 
-  // calcul du nouvel angle d avance si des valeurs ont changÃ©s
+// calcul du nouvel angle d avance si des valeurs ont changÃ©s
   if (newvalue == true) { calculdelavance(); newvalue = false;  }
 
 // puis on gere les fonctions annexe a declencher periodiquement
+
   // recalcul de la dÃ©pression
   if (time_loop - time_check_depression > interval_time_check_depression){gestiondepression();time_check_depression = time_loop;}
-  // gestions sortie pour module exterieur ECU / EC1
+
+// gestions sortie pour module exterieur ECU / EC1
   if (time_loop - time_envoi > interval_time_envoi){gestionsortieECU();ble_do_events();gestionsortieEC1();ble_do_events();time_envoi = time_loop;}
-}
+
 ble_do_events();
 }
 
 
+
+
+void initpressure(){
+  // on initialise la pression atmospherique
+  for (int j = 0 ; j < 10 ; j++) { 
+    correction_pressure += analogRead(MAP_pin);
+  }
+ correction_pressure =  (correction_pressure / 10);
+}
+ 
 
 
 
