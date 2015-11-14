@@ -14,21 +14,21 @@ if (fixed == true){
   }else{
     if (multispark && engine_rpm_average <= 1200){    // If engine rpm below 1800 and multispark has been set, add 2048us to map_value_us
         if (first_multispark ){
-           first_multispark = false;
-           map_value_us = 2048;
+          
+           map_value_us = msvalue;
         }else{
-          map_value_us = (1536 - (25.6 * Degree_Avance_calcul))+2048; 
+          map_value_us = (1536 - (25.6 * Degree_Avance_calcul))+msvalue; 
         } 
     } else{                                                // Otherwise read from map
        map_value_us = 1536 - (25.6 * Degree_Avance_calcul);
     }
   }
-if (map_value_us < 64){                                // If map_value_us is less than 64 (smallest EDIS will accept), set map_value_us to 64us
+  if (map_value_us < 64){                                // If map_value_us is less than 64 (smallest EDIS will accept), set map_value_us to 64us
     map_value_us = 64;
-}
+  }
  tick = map_value_us * 2; // pour le timer  
-
 }
+
 
 
 
@@ -70,19 +70,18 @@ void pip_interupt()  {
 //-------------------------------------------- retrouve l'index du tableau pour les RPM --------------------------------------------// 
 int decode_rpm(int rpm_) {
   int map_rpm = 0;
-   if(rpm_ <rev_mini){                // check si on est dans les limites haute/basse
-     map_rpm = 1;
+   if(rpm_ <rpm_axis[carto_actuel][0]){                // check si on est dans les limites haute/basse
+     map_rpm = 0;
    } else { 
-     if(rpm_ >=rev_limit) {      // 
+     if(rpm_ >=rpm_axis[carto_actuel][nombre_point_RPM - 1]) {      // 
        map_rpm = nombre_point_RPM - 1;      
      }else{
        // retrouve la valeur inferieur 
        while(rpm_ > rpm_axis[carto_actuel][map_rpm]){map_rpm++;} // du while
        if (map_rpm > 0){map_rpm--;}
      }
-   point_RPM_actuel = map_rpm + 1;
-    return map_rpm;
-  }
+   }
+  return map_rpm;
 }
 //--------------------------------------------retrouve l index du tableau de la pression --------------------------------------------//
 int decode_pressure(int pressure_) {
@@ -96,7 +95,6 @@ int decode_pressure(int pressure_) {
      while(pressure_ > pressure_axis[carto_actuel][map_pressure]){map_pressure++;}
      if (map_pressure > 0){map_pressure--;}
    }
-   point_KPA_actuel = map_pressure + 1 ;
    return map_pressure;
 }
 
@@ -118,11 +116,14 @@ int rpm_pressure_to_spark(int rpm, int pressure){
 
 //-------------------------------------------- Function to generate SAW signal to return to EDIS --------------------------------------------//
 void generate_SAW(){
-   digitalWrite(pin_ignition,HIGH);
+ if (first_multispark ){
+  first_multispark = false; 
+  tick = msvalue * 2;
+  }
+ 
   
   delayMicroseconds(200); // on attend un peu 
-// on envoie le SAW
-  digitalWrite(SAW_pin,HIGH);                                 // send output to logic level HIGH (5V)
+ digitalWrite(pin_ignition,HIGH); 
   ignition_on = true;
 
 // gestion du timer 5 pour arreter le SAW
@@ -134,6 +135,8 @@ void generate_SAW(){
   TCCR5B |= (1 << WGM52);   // CTC mode
   TCCR5B |= (1 << CS51);    // 8 prescaler 
   TIMSK5 |= (1 << OCIE5A);  // enable timer compare interrupt
+  // on envoie le SAW
+  digitalWrite(SAW_pin,HIGH);                                 // send output to logic level HIGH (5V)
 }
 
 
@@ -147,6 +150,7 @@ ISR(TIMER5_COMPA_vect){
  ignition_on = false;  
  } 
    
+
  
 // attente 10 degre pas nÃ©cessaire ?
 //  int code_delay = 50;
