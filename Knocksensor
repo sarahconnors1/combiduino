@@ -20,13 +20,15 @@ int vol3 = k3.toInt();
        knockvalue[binknock] = knockvalue[binknock] + total_knock;
        knockcount[binknock] = knockcount[binknock] +  count_knock_max;
      }else{ // sinon on calcul le knock 
-       knock_moyen = (total_knock / count_knock_max)  -  knockmoyen[binknock];
+       knock_moyen = (total_knock / count_knock_max);  
+       delta_knock = knock_moyen -  knockmoyen[binknock];
        var1 = knockmoyen[binknock] ;
        var2 = knock_moyen;
      }
      
      total_knock = 0;
      count_knock = 0;
+   
    }
  stringComplete3 = false;
  inputString3 = "";
