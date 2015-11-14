@@ -11,6 +11,7 @@
 // 3 = multispark 0/1
 // 4,5 => avance initiale
 // 6 = gestion knock sensor 0/1 
+// 7 = nombre de reboot
 // 10 -> 20 nom du BLE
 // 21,22 -> REV MAX
 // 23,24 -> REV MIN
@@ -34,6 +35,17 @@
 // 2450 ----> 2469 kpa 5
 // 2470 ----> 2550 rpm 5
 //etc
+
+void rebootcount(){
+  int rebootnbr = 0;
+  rebootnbr = EEPROM.read(eprom_reboot);
+  if (rebootnbr == 255){
+  rebootnbr = 1;  
+  }
+  rebootnbr ++;
+  EEPROM.write(eprom_reboot, rebootnbr);
+  var2 = rebootnbr;
+  }
 
 
 
@@ -245,6 +257,7 @@ void init_de_eeprom() {
   EEPROMWriteInt(eprom_rev_max, rev_limit); // rev max par defaut
   EEPROMWriteInt(eprom_rev_min, rev_mini); // rev max par defaut
   EEPROMWriteInt(eprom_avance, 0); // avance suppelmentaire par defaut
+  EEPROM.write(eprom_knock, 0); // knock par defaut a non
 }
 //-------------------------------------------------------------------
 //        LECTURE DES PARAMETRE DE L'EEPROM
@@ -282,8 +295,8 @@ debug ("Read EEPROM carto nr " + String(carto));
   knocktemp = EEPROM.read(eprom_knock);
   
   if  (knocktemp > 1 ){
-    EEPROM.write(eprom_knock, 1); // knock par defaut a oui
-    knock_active = true;
+    EEPROM.write(eprom_knock, 0); // knock par defaut a non
+    knock_active = false;
    } else{
      if (knocktemp == 0 ){
          knock_active = false;
@@ -310,7 +323,7 @@ debug ("Read EEPROM carto nr " + String(carto));
   
   
   // nom du bluetooth
-  for (int i = 0; i <=10; i++) {
+  for (int i = 0; i <10; i++) {
      BT_name[i]=  EEPROM.read(eprom_nom_BLE + i); // Nom du Bluettooth
   }
   
