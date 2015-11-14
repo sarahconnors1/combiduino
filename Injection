@@ -1,0 +1,58 @@
+
+//----------------------------------------------------------
+//         Calcul de l'injection
+//----------------------------------------------------------
+
+/*
+// formule pour le calcul de REQ_FUEL
+vol moteur = 2000 cm3 // volume moteur total
+NCYL = 4  // nombre de cylindre
+AFR = 14,7 // rapport stoichio
+injflow =330 cc/min //debit d'un injecteur
+pulse nbr = 4 nombre de fois ou on injecte par cycle complet (2tour)
+
+REQ_Fuel = =((91,06624* vol_moteur)/(NCYL * AFR * (injflow / 10,5)))*1/pulse nbr
+
+REQ_FUEL = 
+
+
+*/
+
+// gestion de la lecture de la lambda
+void lecturelambda(){
+ unsigned int afr_lu = 0;
+  int point_afr = 0;
+ 
+  afr_lu = analogRead(pin_lambda);   
+
+point_afr = decode_afr(afr_lu);
+if (point_afr == AFR_bin_max -1) { // borne maxi  
+  AFR_actuel = AFR[point_afr];
+}
+else if (afr_lu <AFR_analogique[0]){ // borne mini
+   AFR_actuel = AFR[0];
+} else {
+AFR_actuel = map(afr_lu,AFR_analogique[point_afr],AFR_analogique[point_afr + 1],AFR[point_afr],AFR[point_afr + 1]) ; // on fait une interpolation
+
+}
+var1 = AFR_actuel;
+// var2 = afr_lu;
+} 
+
+
+ // Renvoi le bin AFR (0 -> 7)
+ int decode_afr(int afr_) {
+  int map_afr = 0;
+   if(afr_ <AFR_analogique[0]){                // check si on est dans les limites haute/basse
+     map_afr = 0;
+   } else { 
+     if(afr_ >=AFR_analogique[AFR_bin_max -1]) {      // 
+       map_afr = AFR_bin_max - 1;      
+     }else{
+       // retrouve la valeur inferieur 
+       while(afr_ > AFR_analogique[map_afr]){map_afr++;} // du while
+       if (map_afr > 0){map_afr--;}
+     }
+    return map_afr;
+  }
+}
