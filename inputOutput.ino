@@ -11,9 +11,9 @@ void serialEvent() {
  }
  }
  
- void serialEvent3() {
- while (Serial3.available()) {                    //whilst the serial port is available...
-   inputString3 = Serial3.readStringUntil('\n');   //... read in the string until a new line is recieved
+ void serialEvent1() {
+ while (Serial1.available()) {                    //whilst the serial port is available...
+   inputString3 = Serial1.readStringUntil('\n');   //... read in the string until a new line is recieved
    stringComplete3 = true;                      
  }
  }
@@ -131,7 +131,7 @@ void checkdesordres(){
       //parm retour nom bluetooth
       //  exemple "st2;combiduino
       send_setting2_ecu();
-    }
+     }
     else if (inputString.startsWith("gt3") ) {//envoie le setting a l'iphone
       //parm retour  
       // multispark 1/0 (oui/non)
@@ -171,6 +171,7 @@ void checkdesordres(){
    // RAZ c est traite 
      inputString = "";
      stringComplete = false;
+   
  }
 }
 
@@ -194,14 +195,16 @@ void send_setting1_ecu(){
   rpmmin = getValue(inputString, ';', 3) ; // 3er parametre
   rpmmax = getValue(inputString, ';', 4) ; // 4er parametre
   
+  Serial.println("debug|" + debug + "|");
   
-   if ( (carto.toInt() > 0) || (carto.toInt() <= nombre_carto_max) ) {
+   if ( (carto.toInt() > 0) and (carto.toInt() <= nombre_carto_max) ) {
      EEPROM.write(eprom_carto_actuel, carto.toInt()); // MAP en cours = 1
      carto_actuel = carto.toInt();
    }   
-   if ( (debug.toInt() >= 0) || (debug.toInt() <= 1) ) {
+   if ( (debug.toInt() >= 0) and (debug.toInt() <= 1) ) {
      EEPROM.write(eprom_debug, debug.toInt()); // debug 
-     debugging = debug.toInt() == 0 ? true : false;
+     debugging = debug.toInt() == 0 ? false : true;
+     
    }
    if (rpmmin.toInt() < 1000) {
      EEPROMWriteInt(eprom_rev_min, rpmmin.toInt() ); // rev min
@@ -212,18 +215,24 @@ void send_setting1_ecu(){
 }
 
 void send_setting2_ecu(){
-   char BT []= "combiduino";
-   String nameBT = "";
-   
-   nameBT= getValue(inputString, ';', 1) + "          ";
-   nameBT.toCharArray(BT, 10) ; // 1er parametre
+
+  char BT [14]= "combi";
+   String nameBT = "                         ";
+ 
+   nameBT= getValue(inputString, ';', 1) + "              ";
+   nameBT.toCharArray(BT, 12) ; // 1er parametre
+  
 
    
-  for (int i = 0; i <=10; i++) {
-    BT_name[i] = BT[i];
-    EEPROM.write(eprom_nom_BLE + i, BT_name[i]); // Nom du Bluettooth
+  for (int i = 0; i <9; i++) {
+    if (BT_name[i] != BT[i]) {
+      debug("chg" + String(i) + String(BT_name[i]) + String (BT[i]) );
+      BT_name[i] = BT[i];
+      EEPROM.write(eprom_nom_BLE + i, BT_name[i]); // Nom du Bluettooth
+    }
   }
-}
+ 
+}  
 
 void send_setting3_ecu(){  
   String ms = "0";
@@ -258,24 +267,28 @@ void send_setting3_ecu(){
 
 // Envoie le setting 1 a l'iphone
 void send_setting1_iphone() {
-   OutputString = "gt1;" + String(EEPROM.read(eprom_carto_actuel)) + ";" + String(EEPROM.read(eprom_debug))+ ";" + String(EEPROMReadInt(eprom_rev_min)) +  ";" + String(EEPROMReadInt(eprom_rev_max))  ; 
+OutputString="";
+  OutputString = "gt1;" + String(EEPROM.read(eprom_carto_actuel)) + ";" + String(EEPROM.read(eprom_debug))+ ";" + String(EEPROMReadInt(eprom_rev_min)) +  ";" + String(EEPROMReadInt(eprom_rev_max))  ; 
         Send_to_BT(OutputString); 
-        debug(OutputString);
-  }
+}
 
 // Envoie le setting 2 a l'iphone
 void send_setting2_iphone() {
-   OutputString = "gt2;" + String(BT_name); 
+OutputString="";
+  OutputString = "gt2;" + String(BT_name); 
         Send_to_BT(OutputString); 
-        debug(OutputString);
-  }
+}
 
 // Envoie le setting 3 a l'iphone  
   void send_setting3_iphone() {
-   OutputString = "gt3;" + String(EEPROM.read(eprom_ms)) + ";" + String(EEPROMReadInt(eprom_avance)+";" + String(EEPROM.read(eprom_adresseknock))  ) ;; 
+  byte ms = EEPROM.read(eprom_ms);
+   int av = EEPROMReadInt(eprom_avance);
+ byte kn = EEPROM.read(eprom_adresseknock);
+   
+    OutputString="";
+    OutputString = "gt3;" + String(ms) + ";" + av +";" + String(kn)   ; 
         Send_to_BT(OutputString); 
-        debug(OutputString);
-  }
+}
 
 
 // changement de carto actuelle en carto X
@@ -486,7 +499,8 @@ if (output == true){
   // parm 2 correction actuel
   // parm 3 libre knock KNOCK MOYEN
   // parm 4 libre knock DIFFERENCE actuel - Moyen
-  
+ // var1=map_value_us;
+// var1 = AFR_actuel;
    SortieBT = "EC1;" + String(carto_actuel) + ";" + String(correction_degre) +";"+String(var1)+";" + String(var2) ; 
  
  
