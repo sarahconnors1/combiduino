@@ -38,4 +38,15 @@ unsigned int EEPROMReadInt(int p_address){
 
      return ((lowByte << 0) & 0xFF) + ((highByte << 8) & 0xFF00);
  }
+ 
+ 
+// free RAM check for debugging. SRAM for ATmega328p = 2048Kb.
+int availableMemory() {
+    // Use 1024 with ATmega168
+    int size = 8192;
+    byte *buf;
+    while ((buf = (byte *) malloc(--size)) == NULL);
+        free(buf);
+    return size;
+}
 
