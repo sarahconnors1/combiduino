@@ -73,7 +73,6 @@ void writecarto_ram_eeprom(int carto_ram , int carto_eeprom) {
 
 // ecriture de la carto EEPROM vers la carto en memoire RAM
 void writecarto_eeprom_ram(int carto_ram , int carto_eeprom) {
-  int ligne;
   int offset = 0; // nr de ligne dans le tableau total
   
    // on ecrit les axe RPM et KPA 
