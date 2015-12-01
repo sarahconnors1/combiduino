@@ -12,7 +12,7 @@ String getValue(String data, char separator, int index){
     // split by separator
     int stringData = 0;        //variable to count data part nr 
     String dataPart = "";      //variable to hole the return text
-    for(int i = 0; i<data.length(); i++) {    //Walk through the text one letter at a time
+    for(unsigned int i = 0; i<data.length(); i++) {    //Walk through the text one letter at a time
       if(data[i]==separator) { stringData++; //Count the number of times separator character appears in the text
       }else if(stringData==index) {dataPart.concat(data[i]); //get the text when separator is the rignt one  
       }else if(stringData>index) {return dataPart;break;//return text and stop if the next separator appears - to save CPU-time
@@ -50,3 +50,15 @@ int availableMemory() {
     return size;
 }
 
+
+
+//-------------------------------------------- Triggered when serial input detected --------------------------------------------//
+
+ # if KNOCK_USED == 1
+ void serialEvent1() {
+ while (Serial1.available()) {                    //whilst the serial port is available...
+   inputString3 = Serial1.readStringUntil('\n');   //... read in the string until a new line is recieved
+   stringComplete3 = true;                      
+ }
+ }
+#endif
