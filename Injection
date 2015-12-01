@@ -125,7 +125,7 @@ void lecturelambda(){
  afr_lu = analogRead(pin_lambda);   
  analogReference(DEFAULT);
  
-if (afr_lu > AFR_analogique[AFR_bin_max -1)] { // borne maxi  
+if (afr_lu > AFR_analogique[AFR_bin_max -1]) { // borne maxi  
    // AFR_actuel = AFR[point_afr];
 }  else if (afr_lu <AFR_analogique[0]){ // borne mini
     // AFR_actuel = AFR[0];
