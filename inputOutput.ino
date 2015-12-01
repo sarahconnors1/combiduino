@@ -2,27 +2,13 @@
 //  GESTION DES ENTREE SORTIE VERS DEBUG OU IPHONE
 //---------------------------------------------------------------
 
-
-//-------------------------------------------- Triggered when serial input detected --------------------------------------------//
-void serialEvent() {
- while (Serial.available()) {                    //whilst the serial port is available...
-   inputString = Serial.readStringUntil('\n');   //... read in the string until a new line is recieved
-   stringComplete = true;                      
- }
- }
- 
- void serialEvent1() {
- while (Serial1.available()) {                    //whilst the serial port is available...
-   inputString3 = Serial1.readStringUntil('\n');   //... read in the string until a new line is recieved
-   stringComplete3 = true;                      
- }
- }
-
 //-------------Check des donnÃ©e entrante par le port serie-----------------------------
 void checkdesordres(){
+  ble_do_events();
   Read_BT(); // lecture du BT
-  
+ 
   if (stringComplete){   
+    inputString.trim(); 
   if(inputString == "fixed") {
         debug("Fixed Advance Selected");
         fixed = true;
@@ -226,7 +212,6 @@ void send_setting2_ecu(){
    
   for (int i = 0; i <9; i++) {
     if (BT_name[i] != BT[i]) {
-      debug("chg" + String(i) + String(BT_name[i]) + String (BT[i]) );
       BT_name[i] = BT[i];
       EEPROM.write(eprom_nom_BLE + i, BT_name[i]); // Nom du Bluettooth
     }
@@ -500,7 +485,9 @@ if (output == true){
   // parm 3 libre knock KNOCK MOYEN
   // parm 4 libre knock DIFFERENCE actuel - Moyen
  // var1=map_value_us;
-// var1 = AFR_actuel;
+var1 = AFR_actuel;
+var2 = MAP_accel;
+
    SortieBT = "EC1;" + String(carto_actuel) + ";" + String(correction_degre) +";"+String(var1)+";" + String(var2) ; 
  
  
