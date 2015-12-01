@@ -13,62 +13,25 @@ if (fixed == true){
    map_value_us = 1536 - (25.6 * fixed_advance);
   }else{
     if (multispark && engine_rpm_average <= 1200){    // If engine rpm below 1800 and multispark has been set, add 2048us to map_value_us
-        if (first_multispark ){
-          
-           map_value_us = msvalue;
-        }else{
-          map_value_us = (1536 - (25.6 * Degree_Avance_calcul))+msvalue; 
-        } 
-    } else{                                                // Otherwise read from map
-       map_value_us = 1536 - (25.6 * Degree_Avance_calcul);
-    }
+        if (first_multispark ){map_value_us = msvalue;}else{map_value_us = (1536 - (25.6 * Degree_Avance_calcul))+msvalue; } // multispark 
+    } else{ map_value_us = 1536 - (25.6 * Degree_Avance_calcul);}                           // Otherwise read from map
   }
-  if (map_value_us < 64){                                // If map_value_us is less than 64 (smallest EDIS will accept), set map_value_us to 64us
-    map_value_us = 64;
-  }
+  if (map_value_us < 64){ map_value_us = 64; }    // If map_value_us is less than 64 (smallest EDIS will accept), set map_value_us to 64us
  tick = map_value_us * 2; // pour le timer  
 }
 
-
-
-
-
-// gestion de la depression moyenne
+// gestion de la nouvelle dépression
 void gestiondepression(){
-  totalKPA = totalKPA + analogRead(MAP_pin);       
-  current_indexKPA++;              
- 
- // on refait la moyenne des x dernieres mesures
- if (current_indexKPA >= numReadingsKPA ){              
-     manifold_pressure = totalKPA / numReadingsKPA;   //on fait la moyenne 
-     map_pressure_kpa = map(manifold_pressure,0,correction_pressure,0,101);  // on converti la moyenne en KPA
-    newvalue=true;
- if (map_pressure_kpa < min_pressure_kpa_recorded){min_pressure_kpa_recorded = map_pressure_kpa;} // on log le mini enregistrÃ©
- 
- current_indexKPA = 0;totalKPA = 0;  // on remet a 0 pour prochaine lecture
- }
-}
-//-------------------------------------------- PIP signal interupt --------------------------------------------// 
-void pip_interupt()  {
- //gestion plus simple des rpm moyens
-  pip_count++;
-  if (pip_count >=maxpip_count) {
-    engine_rpm_average = (30000000 * maxpip_count) / (micros() - timeold ); 
-    pip_count = 0;
-    newvalue=true;
-    timeold = micros();
-  }
-  
-  // gestion dy cylindre en cours d'allumage
-  cylindre_en_cours++;
-  if (cylindre_en_cours>4){cylindre_en_cours=1;}
-  
-  generate_SAW();                                // Generate SAW avec le calcul precedent
+    map_pressure_kpa = map(analogRead(MAP_pin),0,correction_pressure,0,101);  // on converti la moyenne en KPA
+   MAP_accel = (previous_map_pressure_kpa - map_pressure_kpa) * MAP_check_per_S; // calcul en Kpa/S
+   previous_map_pressure_kpa =  map_pressure_kpa;
+   newvalue=true;
+}  
 
-}
+
 
 //-------------------------------------------- retrouve l'index du tableau pour les RPM --------------------------------------------// 
-int decode_rpm(int rpm_) {
+int decode_rpm(int rpm_) { // renvoi la valeur inférieur du bin
   int map_rpm = 0;
    if(rpm_ <rpm_axis[carto_actuel][0]){                // check si on est dans les limites haute/basse
      map_rpm = 0;
@@ -84,7 +47,7 @@ int decode_rpm(int rpm_) {
   return map_rpm;
 }
 //--------------------------------------------retrouve l index du tableau de la pression --------------------------------------------//
-int decode_pressure(int pressure_) {
+int decode_pressure(int pressure_) { // renvoi la valeur inférieur du bin
    int map_pressure = 0;
    if(pressure_ < pressure_axis[carto_actuel][0]){
      map_pressure = 0;
@@ -115,50 +78,74 @@ int rpm_pressure_to_spark(int rpm, int pressure){
 }
 
 //-------------------------------------------- Function to generate SAW signal to return to EDIS --------------------------------------------//
-void generate_SAW(){
- if (first_multispark ){
-  first_multispark = false; 
-  tick = msvalue * 2;
-  }
- 
+//-------------------------------------------- PIP signal interupt --------------------------------------------// 
+void pip_interupt()  {
+ //gestion plus simple des rpm moyens
+if ((digitalRead(interrupt_X) == LOW) and ( (micros() - pip_old) > debounce ) ) {   
+    pip_old = micros();pip_count++;
+    if (pip_count >= maxpip_count) {
+        engine_rpm_average = (30000000 * maxpip_count) / (micros() - timeold ); 
+        pip_count = 0;
+        newvalue=true;
+        timeold = micros();
+    }
   
-  delayMicroseconds(200); // on attend un peu 
- digitalWrite(pin_ignition,HIGH); 
-  ignition_on = true;
+  if (first_multispark ){
+    first_multispark = false; 
+  }
 
-// gestion du timer 5 pour arreter le SAW
-  TCCR5A = 0;
-  TCCR5B = 0;
-  TCNT5  = 0;
+#if KNOCK_USED == 1
+ digitalWrite(pin_ignition,HIGH); // pour le knock 
+ ignition_on = true;
+#endif
 
-  OCR5A = tick;            // compare match register 
-  TCCR5B |= (1 << WGM52);   // CTC mode
-  TCCR5B |= (1 << CS51);    // 8 prescaler 
+//---------------------
+//gestion des interruption 
+//timer 5A pour ignition
+//timer 5B pour injection 
+//---------------------
+#if INTERRUPT_USED == 1   
+unsigned int timeout_ignition = TCNT5 + tick; 
+  OCR5A = timeout_ignition; 
   TIMSK5 |= (1 << OCIE5A);  // enable timer compare interrupt
-  // on envoie le SAW
-  digitalWrite(SAW_pin,HIGH);                                 // send output to logic level HIGH (5V)
+   // on envoie le SAW
+  digitalWrite(SAW_pin,HIGH);  // send output to logic level HIGH (5V)
+#endif  
+
+#if INJECTION_USED == 1 
+ // gestion dy cylindre en cours d'allumage
+cylindre_en_cours++;
+if (cylindre_en_cours>4){cylindre_en_cours=1;}
+
+if (cylinder_injection[cylindre_en_cours - 1] == true){ // si on doit injecter
+  
+  unsigned int timeout_injection = TCNT5 + tick_injection; 
+  OCR5B = timeout_injection;            // compare match register 
+  TIMSK5 |= (1 << OCIE5B);  // enable timer compare interrupt
+  digitalWrite(pin_injection,HIGH);  // send output to logic level HIGH (5V)
 }
+
+
+    
+#endif
+  }
+}
+
 
 
 ISR(TIMER5_COMPA_vect){ 
 //Timer 5 B pour arreter le SAW
     digitalWrite(pin_ignition,LOW);
     digitalWrite(SAW_pin,LOW);    // on arrte le saw
-   TCCR5A = 0x00;          //Disbale Timer5 while we set it up
-   TCCR5B = 0x00;          //Disbale Timer5 while we set it up
-   TCCR5C = 0x00;          //Disbale Timer5 while we set it up
  ignition_on = false;  
+ //   TIMSK5 &= ~(1 << OCIE5A); //Turn off this output
+ } 
+
+ ISR(TIMER5_COMPB_vect){ 
+//Timer 5 B pour arreter l injection
+    digitalWrite(pin_injection,LOW);    // on arrte l'injection
+ //   TIMSK5 &= ~(1 << OCIE5B); //Turn off this output
  } 
    
 
- 
-// attente 10 degre pas nÃ©cessaire ?
-//  int code_delay = 50;
-//  long ten_ATDC_delay = (((60000000/engine_rpm_average)/36)-code_delay);
-//  delayMicroseconds(ten_ATDC_delay);
-  //delayMicroseconds(map_value_us);                            // hold HIGH for duration of map_value_us
- //digitalWrite(SAW_pin,LOW); 
-
-//delayMicroseconds(map_value_us);                            // hold HIGH for duration of map_value_us
-//digitalWrite(SAW_pin,LOW); 
  
