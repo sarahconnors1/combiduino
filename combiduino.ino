@@ -3,8 +3,9 @@
 #define INJECTION_USED  1  // 1 si OUI sinon 0
 #define LAMBDA_USED  1  // 1 si OUI sinon 0
 #define KNOCK_USED  0  // 1 si OUI sinon 0
-#define INTERRUPT_USED  1  // 1 si OUI sinon 0 
+const byte VERSION= 4;   //version du combiduino
 //-------------------------------------------- Include Files --------------------------------------------//
+#include <avr/pgmspace.h>
 #include <EEPROM.h>
 #include <SPI.h>
 #include <boards.h>
@@ -19,13 +20,18 @@
 #endif
 //-------------------------------------------- Global variables --------------------------------------------//
 //declaration des pins
-const int interrupt_X = 3;                // PIP EDIS pin
-const int SAW_pin = 13;                   // SAW EDIS pin
-const int MAP_pin = A0;                   // depression
+const int interrupt_X = 3;      // PIP EDIS pin
+const int BLE_reset_pin = 4;     // pin 4 reboot BLE
+const int pin_pump = 5;              // pin 5 activation de la pompe 
+// pin 8 et 9 BLE
+
+const int pin_injection = 11; // pin pour la carte MOSFET Injecteur
 const int pin_ignition = 12;  // pin du début d'ignition pour le knock
-const int BLE_reset_pin = 4;
-const int pin_lambda = A5;
-const int pin_injection = 11; // pin pour la carte MOSFET
+const int SAW_pin = 13;           // SAW EDIS pin
+
+const int MAP_pin = A0;            // depression
+const int pin_lambda = A5;         // Signal lambda
+
 
 
 // declaration pour injection 
@@ -38,7 +44,8 @@ const unsigned int injector_opening_time_us = 1000; // temps d'ouverture de l'in
 volatile unsigned int cylindre_en_cours = 1; // cylindre en cours d'allumage
 int MAP_kpas[8] =        {-50,-10,  5,  20,  30,  40}; //valeur acceleration en kpa /s
 int MAP_acceleration[8] ={ 90 ,100 ,100 ,110 ,120,  130} ; //valeur enrichissement 100 = pas d'enrichissement
-const int MAP_acc_max = 6;
+const int MAP_acc_max = 6; // nombre d'indice du tableua MAP_kpas
+
 const boolean cylinder_injection[4] = {true,false,true,false}; // numero de cylindre cylindre pour injection
 const byte prescalertimer5 =2 ; //prescaler /8 a 16mhz donc 1us= 2 tick
 
@@ -63,8 +70,7 @@ String debugstring = "";
 //----------------------------
 //declaration bluetooth
 //----------------------------
-// pin 8 et 9
-// pin 4 reboot
+
 //const boolean init_BT = true; // pour creer la config BT a mettre a false normalement
 char BT_name [10] = "Combi";
 String OutputString = "";
@@ -91,7 +97,6 @@ volatile boolean first_multispark = true;         // 1er allumage en multispark
 int correction_degre = 0; // correction de la MAP
 volatile unsigned int tick = 0; // nombre de tick du timer pour le saw
 const int msvalue = 2025 ; // normaly 2048 
-
 volatile boolean newvalue = true;  // check si des nouvelles valeurs RPM/pression ont ete calculÃ©s
 //gestion simplifie des rpm
 volatile unsigned long timeold = 0;
@@ -100,7 +105,10 @@ volatile unsigned long pip_old = 0; // durée du dernier pip pour le debounce
 volatile unsigned int pip_count = 0;
 volatile unsigned int engine_rpm_average = 0;  // Initial average engine rpm pour demarrage
 const unsigned int maxpip_count = 20;  //on fait la moyenne tout les x pip
-
+const int nombre_point_RPM = 23; // nombre de point de la MAP
+const int nombre_point_DEP = 17; // nombre de point de la MAP
+const int nombre_carto_max = 5; // nombre de carto a stocker
+int carto_actuel = 1; //cartographie en cours
 
 // declaration pour le KNOCK
 long knockvalue[23] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}; // accumulation des valuer de knock
@@ -142,26 +150,16 @@ const unsigned long interval_time_check_lambda = 200; // lambda 5 fois / seconde
 unsigned long time_check_connect = 0; 
 const unsigned long interval_time_check_connect = 5000; // reconnection  1 fois /  5 seconde
 
+unsigned long time_check_fuel_pump = 0; 
+const unsigned long interval_time_check_fuel_pump = 5000; // check de la pompe de fuel
 
 
 
-
-const int nombre_point_RPM = 23; // nombre de point de la MAP
-const int nombre_point_DEP = 17; // nombre de point de la MAP
-const int nombre_carto_max = 5; // nombre de carto a stocker
-
-int carto_actuel = 1; //cartographie en cours
 
 //----------------------------
 // Variable pour eeprom
 //----------------------------
-int EEPROM_lignecarto[nombre_point_RPM] = { 0,  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}; // ligne pour ecriture/lecture dans EEPROM
-int EEPROM_ligneRPM[nombre_point_RPM] = { 0,  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}; // ligne pour ecriture/lecture dans EEPROM
-int EEPROM_ligneKPA[nombre_point_DEP] = { 0,  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}; // ligne pour ecriture/lecture dans EEPROM
-const int nbr_byte_par_int = 1; // 1 byte
-const int eeprom_nombre_max_ligne = 17;
-const int eeprom_nombre_max_carto = 8;
-const int nbr_byte_par_ligne = nombre_point_RPM * nbr_byte_par_int ; //23 * 2 byte
+
 const int debut_eeprom = 50; //Pour laisser un peu de vide
 const int taille_carto = 500; // carto complete avec kpa + rpm
 const int debut_kpa = 400; //Pour ecrire les kpa au 400 de chaque MAP
@@ -190,14 +188,18 @@ void setup() {
   detachInterrupt(1);
   detachInterrupt(0); // on desactive le pin 2
   
-
-  pinMode(SAW_pin, OUTPUT);                                                 //  SAW_pin as a digital output
+// declaration des Pin OUTPUT
+  pinMode(SAW_pin, OUTPUT);                                                 
   pinMode(pin_ignition, OUTPUT); 
   pinMode(pin_injection, OUTPUT);
-  
+  pinMode( pin_pump, OUTPUT);
+
+// gestion de l'allumage de la pompe
+digitalWrite(pin_pump,LOW);
+
+// declaration des Pin INTPUT  
   pinMode(interrupt_X, INPUT);
   digitalWrite (interrupt_X, HIGH);
-
   pinMode(pin_lambda, INPUT);
   digitalWrite (pin_lambda, LOW );
   
@@ -216,15 +218,14 @@ void setup() {
    Serial1.begin(115200);  
   while (!Serial1) { ; }// wait for serial port to connect. 
  #endif
- 
-  inputString.reserve(50);   //reserve 200 bytes for serial input - equates to 25 characters
-  OutputString.reserve(50);
 
+  inputString.reserve(50);   //reserve 50 bytes for serial input - equates to 25 characters
+  OutputString.reserve(50);
  
   time_loop = millis();
 
   // init des cartos si pas deja fait
-  if (String(EEPROM.read(eprom_init) )  != "100" ) { init_eeprom = true; }else{init_eeprom = false;} // on lance l'init de l'eeprom si necessaire   
+  if (EEPROM.read(eprom_init)   !=  VERSION ) { init_eeprom = true; }else{init_eeprom = false;} // on lance l'init de l'eeprom si necessaire   
 //---------POUR INIT CARTE -------------------------------  
 //  init_eeprom = true; // A DE TAGGER POUR INITIALISATION 
 // ------------------------------------------------------     
@@ -236,15 +237,15 @@ if (init_eeprom == true) {debug ("Init des MAP EEPROM");init_de_eeprom();RAZknoc
   initknock();
  #endif 
 
-   // Initialisationdu BT
-  ble_set_name(BT_name);
+// Initialisationdu BT
+   ble_set_name(BT_name);
    debug ("ready!");
-  ble_begin();  
+   ble_begin();  
 
  initpressure();
- // initialisation du PIP interrupt 
+ inittimer(); // init des interruption Timer 5
 
-  inittimer();
+ // initialisation du PIP interrupt 
    attachInterrupt(1, pip_interupt, FALLING);                                //  interruption PIP signal de l'edis
 
 }
@@ -277,6 +278,9 @@ if (time_loop - time_reception > interval_time_reception){checkdesordres();time_
 
 // gestions connection BLE
   if (time_loop - time_check_connect > interval_time_check_connect){checkBLE();time_check_connect = time_loop;}
+
+// check demarrage de la pompe fuel
+  if (time_loop - time_check_fuel_pump > interval_time_check_fuel_pump){checkpump();time_check_fuel_pump = time_loop;}
 }
 
 void serialEvent() {
@@ -288,13 +292,7 @@ void serialEvent() {
  }
 
 
-void checkBLE(){
-  // si deconnection on reset la carte BLE
-if (!ble_connected()){
-  ble_reset(BLE_reset_pin);
-  debug("Reset BLE");
-  }
-}
+
 
 
 void initpressure(){
