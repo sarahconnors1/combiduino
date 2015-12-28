@@ -33,14 +33,14 @@ void gestiondepression(){
 //-------------------------------------------- retrouve l'index du tableau pour les RPM --------------------------------------------// 
 int decode_rpm(int rpm_) { // renvoi la valeur inférieur du bin
   int map_rpm = 0;
-   if(rpm_ <rpm_axis[carto_actuel][0]){                // check si on est dans les limites haute/basse
+   if(rpm_ <rpm_axis[0]){                // check si on est dans les limites haute/basse
      map_rpm = 0;
    } else { 
-     if(rpm_ >=rpm_axis[carto_actuel][nombre_point_RPM - 1]) {      // 
+     if(rpm_ >=rpm_axis[nombre_point_RPM - 1]) {      // 
        map_rpm = nombre_point_RPM - 1;      
      }else{
        // retrouve la valeur inferieur 
-       while(rpm_ > rpm_axis[carto_actuel][map_rpm]){map_rpm++;} // du while
+       while(rpm_ > rpm_axis[map_rpm]){map_rpm++;} // du while
        if (map_rpm > 0){map_rpm--;}
      }
    }
@@ -49,13 +49,13 @@ int decode_rpm(int rpm_) { // renvoi la valeur inférieur du bin
 //--------------------------------------------retrouve l index du tableau de la pression --------------------------------------------//
 int decode_pressure(int pressure_) { // renvoi la valeur inférieur du bin
    int map_pressure = 0;
-   if(pressure_ < pressure_axis[carto_actuel][0]){
+   if(pressure_ < pressure_axis[0]){
      map_pressure = 0;
-   }else if (pressure_ > pressure_axis[carto_actuel][nombre_point_DEP -1]) {
+   }else if (pressure_ > pressure_axis[nombre_point_DEP -1]) {
      map_pressure = nombre_point_DEP -1 ;
    }else{
      // retrouve la valeur inferieur 
-     while(pressure_ > pressure_axis[carto_actuel][map_pressure]){map_pressure++;}
+     while(pressure_ > pressure_axis[map_pressure]){map_pressure++;}
      if (map_pressure > 0){map_pressure--;}
    }
    return map_pressure;
@@ -67,10 +67,7 @@ int rpm_pressure_to_spark(int rpm, int pressure){
   int table_value;
   int map_rpm_index = decode_rpm(rpm);                      // retrouve index RPM
   int map_pressure_index = decode_pressure(pressure);       // retrouve index pression
-  
-  // gestion de la multi cartographie
-  map_pressure_index = map_pressure_index + (carto_actuel -1) * nombre_point_DEP ; // on decale de X lignes
-  
+    
   table_value = ignition_map[map_pressure_index][map_rpm_index];
   // correction de l avance manuel
   table_value = table_value + correction_degre;
@@ -104,13 +101,12 @@ if ((digitalRead(interrupt_X) == LOW) and ( (micros() - pip_old) > debounce ) ) 
 //timer 5A pour ignition
 //timer 5B pour injection 
 //---------------------
-#if INTERRUPT_USED == 1   
+   
 unsigned int timeout_ignition = TCNT5 + tick; 
   OCR5A = timeout_ignition; 
   TIMSK5 |= (1 << OCIE5A);  // enable timer compare interrupt
    // on envoie le SAW
   digitalWrite(SAW_pin,HIGH);  // send output to logic level HIGH (5V)
-#endif  
 
 #if INJECTION_USED == 1 
  // gestion dy cylindre en cours d'allumage
@@ -123,10 +119,7 @@ if (cylinder_injection[cylindre_en_cours - 1] == true){ // si on doit injecter
   OCR5B = timeout_injection;            // compare match register 
   TIMSK5 |= (1 << OCIE5B);  // enable timer compare interrupt
   digitalWrite(pin_injection,HIGH);  // send output to logic level HIGH (5V)
-}
-
-
-    
+}   
 #endif
   }
 }
