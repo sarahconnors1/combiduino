@@ -48,16 +48,17 @@ void checkdesordres(){
       correction_degre = correction_degre - 3;
    }
     else if (inputString.startsWith("map;") ) {// change la carto actuelle
-    //parm 1 nr de carto RAM
-      changement_carto_ram();
+    //parm 1 nr de carto 
+      changement_carto(); // REVU
     }
     else if (inputString.startsWith("chg;") ) {// change la 1 point de la carto x
     //parm 1 nr de carto RAM
     //parm 2 point RPM 0 -> 22
     //parm 3 point KPA 0 -> 16
     //parm 4 degre
-      changement_point_carto_ram();
+      changement_point_carto(); // REVU
     }
+    /*
     else if (inputString.startsWith("writecarto;") ) {// ecrit la carto en ram X dans la carto Y eeprom
     //parm 1 nr de carto RAM
     //parm 2 nr de carto EEPROM
@@ -68,29 +69,30 @@ void checkdesordres(){
     //parm 2 nr de carto EEPROM
       carto_eeprom_vers_ram();
     }
+    */
     else if (inputString.startsWith("sndcarto;") ) {//envoie la carto eeprom => IPHONE
       //parm 1 nr de carto EEPROM
-      send_carto_iphone();
+      send_carto_iphone(); // REVU
     }
     else if (inputString.startsWith("sndkpa;") ) {//envoie l axe KPA eeprom => IPHONE
       //parm 1 nr de carto EEPROM
-      send_kpa_iphone();
+      send_kpa_iphone(); // REVU
     }
     else if (inputString.startsWith("gtkpa;") ) {//envoie l axe KPA iphone => ECU
       //parm 1 nr de carto EEPROM
       // parm 2 point kpa
       // parm 3 valeur
-      get_kpa_iphone();
+      get_kpa_iphone(); // REVU
     }
     else if (inputString.startsWith("sndrpm;") ) {//envoie l axe RPM eeprom => I PHONE
       //parm 1 nr de carto EEPROM
-      send_rpm_iphone();
+      send_rpm_iphone(); // REVU
     }
     else if (inputString.startsWith("gtrpm;") ) {//envoie l axe RPM iphone => ECU
       //parm 1 nr de carto EEPROM
       // parm 2 point rpm
       // parm 3 valeur
-      get_rpm_iphone();
+      get_rpm_iphone(); // REVU
     }
     else if (inputString.startsWith("gt1") ) {//envoie le setting a l'iphone
       //parm retour carto demarrage 
@@ -181,8 +183,6 @@ void send_setting1_ecu(){
   rpmmin = getValue(inputString, ';', 3) ; // 3er parametre
   rpmmax = getValue(inputString, ';', 4) ; // 4er parametre
   
-  Serial.println("debug|" + debug + "|");
-  
    if ( (carto.toInt() > 0) and (carto.toInt() <= nombre_carto_max) ) {
      EEPROM.write(eprom_carto_actuel, carto.toInt()); // MAP en cours = 1
      carto_actuel = carto.toInt();
@@ -204,12 +204,8 @@ void send_setting2_ecu(){
 
   char BT [14]= "combi";
    String nameBT = "                         ";
- 
    nameBT= getValue(inputString, ';', 1) + "              ";
    nameBT.toCharArray(BT, 12) ; // 1er parametre
-  
-
-   
   for (int i = 0; i <9; i++) {
     if (BT_name[i] != BT[i]) {
       BT_name[i] = BT[i];
@@ -246,7 +242,7 @@ void send_setting3_ecu(){
 
 
 //-----------------------------------------------------------------
-//       ENVOI DES SETTINGS A L'IPHONE
+//       ENVOI DES SETTINGS ECU A L'IPHONE
 //-----------------------------------------------------------------
 
 
@@ -275,14 +271,16 @@ OutputString="";
         Send_to_BT(OutputString); 
 }
 
-
+//------------------------------------------------------------------
 // changement de carto actuelle en carto X
-void changement_carto_ram(){
+//------------------------------------------------------------------
+void changement_carto(){
   String carto="1";
   carto = getValue(inputString, ';', 1) ; // 1er parametre
   if ( (carto.toInt() >0) && (carto.toInt() <= nombre_carto_max) ){
     carto_actuel = carto.toInt();
-    EEPROM.write(eprom_carto_actuel,carto_actuel); // SAV de la derniere carto en cours
+   // EEPROM.write(eprom_carto_actuel,carto_actuel); // SAV de la derniere carto en cours
+    writecarto_eeprom_ram(carto_actuel); // on ecrit la carto en RAM + axe KPA/RPM
   debug("carto change" + carto);
   }else{
     debug("carto invalide" + carto);
@@ -291,49 +289,27 @@ void changement_carto_ram(){
 
 
 
-// Ecriture de la carto X en RAM vers carto Y EEPROM
-void carto_ram_vers_eeprom(){
-  String cartoram="1";
-  String cartoeeprom="1";
-  cartoram = getValue(inputString, ';', 1) ; // 1er parametre
-  cartoeeprom = getValue(inputString, ';', 2) ; // 2eme parametre
-  if ( (cartoram.toInt() >0) && (cartoram.toInt() <= nombre_carto_max) && (cartoeeprom.toInt() >0) && (cartoeeprom.toInt() <=eeprom_nombre_max_carto)   ){
-     writecarto_ram_eeprom(cartoram.toInt() , cartoeeprom.toInt());
-    debug("carto sauvegarde ram"+ cartoram + "eeprom" + cartoeeprom  );
-  }else{
-    debug("ordre invalide");
-  }
-}
+//*******************************************************
+//  ENVOI DONNEE EEPROM VERS IPHONE
+//*******************************************************
 
-// Ecriture de la carto X EEPROM vers carto Y en RAM
-void carto_eeprom_vers_ram(){
-  String cartoram="1";
-  String cartoeeprom="1";
-  cartoram = getValue(inputString, ';', 1) ; // 1er parametre
-  cartoeeprom = getValue(inputString, ';', 2) ; // 2eme parametre
-  if ( (cartoram.toInt() >0) && (cartoram.toInt() <= nombre_carto_max) && (cartoeeprom.toInt() >0) && (cartoeeprom.toInt() <=eeprom_nombre_max_carto)   ){
-     writecarto_eeprom_ram(cartoram.toInt() , cartoeeprom.toInt());
-    debug("carto sauvegarde");
-  }else{
-    debug("ordre invalide");
-  }
-}
-//--------------------------------------------------------
-//  ENVOI DONNEE VERS IPHONE
-//-------------------------------------------------------
-
-// lit une carto EEPROM ----> IPHONE
+//----------------------------------
+// point carto EEPROM ----> IPHONE
+//----------------------------------
 // format "cep,nrcarto,nrligne, point RPM,degre"
 void send_carto_iphone(){
     String cartoeeprom="1";
+    int carto_x = 1;
+    int value = 0;
     OutputString = "";
   cartoeeprom = getValue(inputString, ';', 1) ; // 2eme parametre
-  if (  (cartoeeprom.toInt() >0) && (cartoeeprom.toInt() <=eeprom_nombre_max_carto)   ){
-    
+  carto_x = cartoeeprom.toInt() ; 
+  if (  (carto_x >0) && (carto_x <=nombre_carto_max)   ){   
+  carto_x--;
     for (int nr_ligne = 0; nr_ligne < nombre_point_DEP; nr_ligne++){ // on parcout les ligne de la carto EEPROM
-    readeepromline(nr_ligne,cartoeeprom.toInt()); // on lit dans l'EEPROM la ligne correspondante mise dans le tableau EEPROM_lignecarto
       for (int nr_RPM = 0; nr_RPM < nombre_point_RPM; nr_RPM++){ // on parcout les colonnes de la carto
-        OutputString = "cep;" + String(cartoeeprom.toInt()) + ";" + String(nr_ligne) + ";" + String(nr_RPM) + ";"  + String(EEPROM_lignecarto[nr_RPM])  ; // on rempli la ligne carto   
+        value = read_eeprom_point_carto (carto_x , nr_ligne , nr_RPM );
+        OutputString = "cep;" + String(cartoeeprom.toInt()) + ";" + String(nr_ligne) + ";" + String(nr_RPM) + ";"  + String(value)  ; // on rempli la ligne carto   
         Send_to_BT(OutputString);  
       }
      OutputString ="";
@@ -342,18 +318,23 @@ void send_carto_iphone(){
     debug("ordre invalide");
   }
 }
-
-// lit un axe KPA EEPROM ----> IPHONE
+//-----------------------------------
+// axe KPA EEPROM ----> IPHONE
+//-----------------------------------
 // format "cek,nrcarto,nrligne, kpa"
+// REVU
 void send_kpa_iphone(){
-    String cartoeeprom="1";
-    OutputString = "";
-    cartoeeprom = getValue(inputString, ';', 1) ; // 1eme parametre
-  if (  (cartoeeprom.toInt() >0) && (cartoeeprom.toInt() <=eeprom_nombre_max_carto)   ){
-   
-    readeepromlinekpa(cartoeeprom.toInt()); // on lit l EEPROM --->BUFFER
+   String cartoeeprom="1";
+  int carto_x = 1;
+  int value = 0;
+  OutputString = "";
+  cartoeeprom = getValue(inputString, ';', 1) ; // 1eme parametre
+  carto_x = cartoeeprom.toInt() ; 
+  if (  (carto_x >0) && (carto_x <=nombre_carto_max)   ){
+   carto_x--;
     for (int nr_ligne = 0; nr_ligne < nombre_point_DEP; nr_ligne++){ // on parcout les colonnes de la carto
-        OutputString = "cek;" + String(cartoeeprom.toInt()) + ";" + String(nr_ligne) + ";"  + String(EEPROM_ligneKPA[nr_ligne])  ; // on rempli la ligne carto   
+        value = read_eeprom_point_KPA (carto_x , nr_ligne );
+        OutputString = "cek;" + String(cartoeeprom.toInt()) + ";" + String(nr_ligne) + ";"  + String(value)  ; // on rempli la ligne carto   
         Send_to_BT(OutputString);  
       }
      OutputString ="";
@@ -361,34 +342,38 @@ void send_kpa_iphone(){
     debug("ordre invalide");
   }
 }
-
-// lit un axe RPM EEPROM ----> IPHONE
+//---------------------------------
+// axe RPM EEPROM ----> IPHONE
+//---------------------------------
 // format "cer,nrcarto,nrligne, kpa"
 void send_rpm_iphone(){
-    String cartoeeprom="1";
-    OutputString = "";
-    cartoeeprom = getValue(inputString, ';', 1) ; // 1eme parametre
-  if (  (cartoeeprom.toInt() >0) && (cartoeeprom.toInt() <=eeprom_nombre_max_carto)   ){
-   
-    readeepromlinerpm(cartoeeprom.toInt()); // on lit l EEPROM --->BUFFER
+  int carto_x = 1;
+  int value = 0;
+  String cartoeeprom="1";
+  OutputString = "";
+  cartoeeprom = getValue(inputString, ';', 1) ; // 1eme parametre
+  carto_x = cartoeeprom.toInt() ; 
+  if (  (carto_x >0) && (carto_x <=nombre_carto_max)   ){
+   carto_x--;
     for (int nr_RPM = 0; nr_RPM < nombre_point_RPM; nr_RPM++){ // on parcout les colonnes de la carto
-        OutputString = "cer;" + String(cartoeeprom.toInt()) + ";" + String(nr_RPM) + ";"  + String(EEPROM_ligneRPM[nr_RPM])  ; // on rempli la ligne carto   
+        value = read_eeprom_point_RPM (carto_x , nr_RPM );
+        OutputString = "cer;" + String(cartoeeprom.toInt()) + ";" + String(nr_RPM) + ";"  + String(value)  ; // on rempli la ligne carto   
         Send_to_BT(OutputString);  
-      }
+    }
      OutputString ="";
   }else{
     debug("ordre invalide");
   }
 }
 
-//-------------------------------------------------
-// Reception des donnÃ©e de carto , axes RPM & Kpa
-//     IPHONE ===>> ECU
-//------------------------------------------------
+//**********************************************
+// RECEPTION DONNEE    IPHONE ===>> ECU
+//**********************************************
 
-// envoi de point KPA IPHONE => ECU
+//---------------------------------
+//  point KPA IPHONE => ECU
+//---------------------------------
 void get_kpa_iphone(){
-  int adresse = 0;
   int nr_carto = 0;
   String carto="1";
   String point_kpa = "0";
@@ -401,15 +386,13 @@ void get_kpa_iphone(){
   if ( (carto.toInt() >0) && (carto.toInt() <= nombre_carto_max)  && (point_kpa.toInt() <= nombre_point_DEP -1) && (kpa.toInt() >= 0 ) ){
     nr_carto = carto.toInt(); 
     nr_carto-- ; // car la carto 1 -> pas de dÃ©calage
-    pressure_axis[nr_carto][point_kpa.toInt()] = kpa.toInt();  // on ecrit en RAM
-    
-    adresse = (nr_carto * taille_carto ) + debut_kpa + debut_eeprom; // on retrouve l'adresse du dÃ©but de la ligne a Ã©crirr
-    EEPROM.write(adresse + point_kpa.toInt() * nbr_byte_par_int,  kpa.toInt() ); // on ecrit en EEPROM
+    write_eeprom_point_KPA (nr_carto , point_kpa.toInt() , kpa.toInt() );
   }
 }
-// envoi de point RPM IPHONE => ECU
+//---------------------------------
+// point RPM IPHONE => ECU
+//---------------------------------
 void get_rpm_iphone(){
-  int adresse = 0;
   int nr_carto = 0;
   String carto="1";
   String point_rpm = "0";
@@ -420,18 +403,15 @@ void get_rpm_iphone(){
   rpm = getValue(inputString, ';', 3) ; // 4er parametre
   
   if ( (carto.toInt() >0) && (carto.toInt() <= nombre_carto_max)  && (point_rpm.toInt() <= nombre_point_RPM -1) && (rpm.toInt() >= 0 ) ){
-    
     nr_carto = carto.toInt(); 
     nr_carto-- ; // car la carto 1 -> pas de dÃ©calage
-    rpm_axis[nr_carto][point_rpm.toInt()] = rpm.toInt();  // on ecrit en RAM
-  
-    adresse = (nr_carto * taille_carto) + debut_rpm + debut_eeprom; // on retrouve l'adresse du dÃ©but de la ligne a Ã©crirr
-    EEPROMWriteInt(adresse + point_rpm.toInt() * 2, rpm.toInt() ); // on ecrit des vrai Int sur 2 Bytes
+    write_eeprom_point_RPM (nr_carto , point_rpm.toInt() , rpm.toInt() );
   }
 }
-
-// changementd'un point de carto X en RAM
-void changement_point_carto_ram(){
+//--------------------------------
+//  point de carto IPHONE => ECU 
+//--------------------------------
+void changement_point_carto(){
   String carto="1";
   String point_rpm = "0";
   String point_kpa = "0";
@@ -443,8 +423,7 @@ void changement_point_carto_ram(){
   degre = getValue(inputString, ';', 4) ; // 4er parametre
   
   if ( (carto.toInt() >0) && (carto.toInt() <= nombre_carto_max) && (point_rpm.toInt() <= nombre_point_RPM -1) && (point_kpa.toInt() <= nombre_point_DEP -1) && (degre.toInt() >= 0 ) ){
-   ignition_map[(nombre_point_DEP*( carto.toInt() - 1 )) + point_kpa.toInt()] [point_rpm.toInt()] = degre.toInt();
-    debug("chgt point kpa " + String((nombre_point_DEP* (carto.toInt() -1) ) + point_kpa.toInt() ) + "|rpm " + String(point_rpm.toInt() ) + "degre : " + degre );
+    write_eeprom_point_carto (carto.toInt() , point_kpa.toInt() , point_rpm.toInt() , degre.toInt() );
   }else{
     debug("ordre invalid");
   }
@@ -452,7 +431,7 @@ void changement_point_carto_ram(){
 
 
 //-----------------------------------------------------
-//------------Envoi de donnÃ©e dans le port serie / BT
+//------------Envoi de donnee dans le port serie / BT
 //-----------------------------------------------------
 void gestionsortieECU(){
 String SortieBT;
