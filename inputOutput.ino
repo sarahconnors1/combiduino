@@ -58,18 +58,6 @@ void checkdesordres(){
     //parm 4 degre
       changement_point_carto(); // REVU
     }
-    /*
-    else if (inputString.startsWith("writecarto;") ) {// ecrit la carto en ram X dans la carto Y eeprom
-    //parm 1 nr de carto RAM
-    //parm 2 nr de carto EEPROM
-      carto_ram_vers_eeprom();
-    }
-    else if (inputString.startsWith("readcarto;") ) {// ecrit la carto EEPROM X dans la carto en RAM Y 
-    //parm 1 nr de carto RAM
-    //parm 2 nr de carto EEPROM
-      carto_eeprom_vers_ram();
-    }
-    */
     else if (inputString.startsWith("sndcarto;") ) {//envoie la carto eeprom => IPHONE
       //parm 1 nr de carto EEPROM
       send_carto_iphone(); // REVU
@@ -148,14 +136,33 @@ void checkdesordres(){
       debug("save knock");
     }
     else if (inputString.startsWith("knk off") ) {//stop gestion du cliquetis 
+     #if KNOCK_USED == 1 
       knock_active = false;
+     #endif
       debug("knock off");
     }
     else if (inputString.startsWith("knk on") ) {//stop gestion du cliquetis 
-      knock_active = false;
+      #if KNOCK_USED == 1 
+      knock_active = on;
+      #endif
       debug("knock off");
     }
-
+    else if (inputString.startsWith("afr on") ) {//regulation lambda 
+      correction_lambda_used = true;
+      debug("AFR ON");
+    }
+    else if (inputString.startsWith("afr off") ) {//regulation lambda 
+      correction_lambda_used = false;
+      debug("AFR OFF");
+    }
+    else if (inputString.startsWith("p") ) {//regulation lambda 
+      Req_Fuel_us += 1000;
+      debug("plusreq");
+    }
+    else if (inputString.startsWith("m") ) {//regulation lambda 
+      Req_Fuel_us -= 1000;
+      debug("moinsreq");
+    }
    // RAZ c est traite 
      inputString = "";
      stringComplete = false;
@@ -233,11 +240,12 @@ void send_setting3_ecu(){
      correction_degre = avance.toInt();
    }
    // knock actif
+  #if KNOCK_USED == 1 
    if ( (knck.toInt() >= 0) || (knck.toInt() <= 1) ) {
      EEPROM.write(eprom_adresseknock, knck.toInt()); // debug 
      knock_active = knck.toInt() == 0 ? false : true;
    }
-  
+  #endif
 }
 
 
@@ -465,8 +473,8 @@ if (output == true){
   // parm 4 libre knock DIFFERENCE actuel - Moyen
  // var1=map_value_us;
 var1 = AFR_actuel;
-var2 = MAP_accel;
-
+//var2 = correction_lambda_actuel;
+var2 = acceleration_actuel;
    SortieBT = "EC1;" + String(carto_actuel) + ";" + String(correction_degre) +";"+String(var1)+";" + String(var2) ; 
  
  
