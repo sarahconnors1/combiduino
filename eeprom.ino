@@ -200,12 +200,18 @@ void read_eeprom() {
   
   if  (knocktemp > 1 ){
     EEPROM.write(eprom_knock, 0); // knock par defaut a non
+  #if KNOCK_USED == 1 
     knock_active = false;
+  #endif
    } else{
      if (knocktemp == 0 ){
+        #if KNOCK_USED == 1 
          knock_active = false;
+        #endif
        }else{
-         knock_active = true; 
+        #if KNOCK_USED == 1 
+          knock_active = true; 
+        #endif
        }
   }
   
