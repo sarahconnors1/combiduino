@@ -3,7 +3,9 @@
 #define INJECTION_USED  1  // 1 si OUI sinon 0
 #define LAMBDA_USED  1  // 1 si OUI sinon 0
 #define KNOCK_USED  0  // 1 si OUI sinon 0
-const byte VERSION= 4;   //version du combiduino
+#define LAMBDATYPE 1  // 1= pour wideband 2= pour Narrow band
+#define VACUUMTYPE 1  // 1= pour prise depression colecteur 2= pour prise depression amont papillon 
+const byte VERSION= 9;   //version du combiduino
 //-------------------------------------------- Include Files --------------------------------------------//
 #include <avr/pgmspace.h>
 #include <EEPROM.h>
@@ -34,31 +36,64 @@ const int pin_lambda = A5;         // Signal lambda
 
 
 
-// declaration pour injection 
 
+// gestion different mode du moteur
+#define Stopping 1
+#define Cranking  2
+#define Idling  3
+#define Running  10
+
+
+byte running_mode = Stopping;
+
+// declaration pour injection 
+const byte ouverture_initiale = 6 ; // nombre de millisecond d'ouverture des injecteurs avant démarrage
 volatile unsigned int tick_injection = 0; // pour le timer
 const byte nombre_inj_par_cycle = 2; // le nombre d'injection pour 1 cycle complet 2 tour
-unsigned int Req_Fuel_us = 22100 / nombre_inj_par_cycle;  // ouverture max des injecteurs 100% 
+unsigned int Req_Fuel_us = 10000 / nombre_inj_par_cycle;  // ouverture max des injecteurs 100% 
 unsigned int injection_time_us = 0; // temps d'injection corrigé pour le timer
-const unsigned int injector_opening_time_us = 1000; // temps d'ouverture de l'injecteur en us
+unsigned int previous_injection_time_us = 0; // temps d'injection corrigé pour le timer
+const unsigned int injector_opening_time_us = 800; // temps d'ouverture de l'injecteur en us
 volatile unsigned int cylindre_en_cours = 1; // cylindre en cours d'allumage
-int MAP_kpas[8] =        {-50,-10,  5,  20,  30,  40}; //valeur acceleration en kpa /s
-int MAP_acceleration[8] ={ 90 ,100 ,100 ,110 ,120,  130} ; //valeur enrichissement 100 = pas d'enrichissement
-const int MAP_acc_max = 6; // nombre d'indice du tableua MAP_kpas
-
 const boolean cylinder_injection[4] = {true,false,true,false}; // numero de cylindre cylindre pour injection
 const byte prescalertimer5 =2 ; //prescaler /8 a 16mhz donc 1us= 2 tick
 
+
+// declaration acceleration
+int MAP_kpas[8] =        {-50,-10,  10,  40,  80,  120}; //valeur acceleration en kpa /s
+int MAP_acceleration[8] ={ 0 ,  0,   0,  10,  10,  10} ; //valeur enrichissement en % de reqfuel
+const int accel_every_spark = 80;  // correction possible tous les x etincelle
+long  last_accel_spark = 0 ; //pas de correction au demarrage
+byte accel_state_actuel = 0;  //etat du moteur 0=pas d'accel 1=accel 2=decel 
+const int MAP_acc_max = 6; // nombre d'indice du tableua MAP_kpas
+unsigned int VE_actuel = 0; // VE du dernier calcul
+unsigned int acceleration_actuel = 0; // accel du dernier calcul
+
+
+
 // declaration pour la lambda
+const int AFR_bin_max = 9;
 
-byte AFR[8] =           {180 ,170 ,150 ,147 ,140, 130, 120, 110} ; //valeur AFR * 10
-int AFR_analogique[8] ={45,   93  ,186 ,214 ,651, 744, 791, 835}; //valeur lu par le capteur avec echelle 1,1V 1024
-//byte AFR_analogique[8] ={10,21,41,47,144,164,175,185}; //valeur lu par le capteur avec echelle 1024
-const int AFR_bin_max = 8;
+#if LAMBDATYPE == 2
+int AFR_analogique[AFR_bin_max] ={45,   93  ,186 ,214 ,651, 744, 791, 835,1023}; //valeur lu par le capteur avec echelle 1,1V 1024
+byte AFR[AFR_bin_max] =          {190 ,170  ,150 ,147 ,140, 130, 120, 110,90} ; //valeur AFR * 10
+# endif
+#if LAMBDATYPE == 1
+int AFR_analogique[AFR_bin_max] ={0 , 200, 300, 400, 540, 664, 716, 818, 1000}; //valeur lu par 0V=9 5V=19
+byte AFR[AFR_bin_max] =          {90, 110, 120, 130, 147, 155, 160, 170, 190 } ; //valeur AFR * 10
+# endif
+
 int AFR_actuel =147; // valeur AFR 100 -> 190
-
-
-
+int max_lambda_cor = 130; // correction maxi
+int min_lambda_cor = 50; // correction mini
+int correction_lambda_actuel = 100;
+boolean correction_lambda_used = false; // correction lambda active ou non
+const int increment_correction_lambda = 2;
+const int correction_lambda_every_spark = 30;  // correction possible tous les x etincelle
+long  last_correction_lambda_spark = 1000 ; //pas de correction au demarrage
+int sum_lambda = 0;
+byte count_lambda = 0;
+const byte nbre_mesure_lambda = 2;
 
 
 // declaration du debugging
@@ -84,10 +119,15 @@ boolean stringComplete3 = false;     // whether the string is complete
 // ----------------------------
 // declaration pour l ECU
 //-----------------------------
+int point_RPM = 0; // index dans la carto
+int point_KPA = 0; // index dans la carto
+boolean bin_carto_change = true; // indicateur de changement de point de carto
+
+volatile long nbr_spark = 0;
 volatile float map_value_us;                 // duree du SAW EDIS en microseconds
 volatile boolean SAW_requested = false;
-int rev_limit = 4550;               // Max tour minute
-int rev_mini = 500; // min tour minute
+unsigned int rev_limit = 4550;               // Max tour minute
+unsigned int rev_mini = 500; // min tour minute
 volatile int Degree_Avance_calcul = 10;              // Degree_Avance_calculÃ© suivant la cartographie a10 par defaut pour demmarragee
 boolean output = true;
 boolean fixed = false;              // declare whether to use fixed advance values
@@ -109,34 +149,39 @@ const int nombre_point_RPM = 23; // nombre de point de la MAP
 const int nombre_point_DEP = 17; // nombre de point de la MAP
 const int nombre_carto_max = 5; // nombre de carto a stocker
 int carto_actuel = 1; //cartographie en cours
+volatile boolean ignition_on = false; // gere si le SAW est envoyé non terminé
 
 // declaration pour le KNOCK
+#if KNOCK_USED == 1
 long knockvalue[23] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}; // accumulation des valuer de knock
 long knockcount[23] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}; // accumulation des count de knock
 long knockmoyen[23] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}; // accumulation des count moyen
-volatile boolean ignition_on = false; // gere si le SAW est envoyé non terminé
 long total_knock = 0;
 long knock_moyen = 0; // moyend de la période
 int count_knock = 0;
 int delta_knock = 0; // ecart par rapport a la moyenne enregistré
 const int count_knock_max = 8; // tout les 8 pip = 4 tour
-long var1 = 0;
-long var2 = 0;
 boolean knock_record = false; // enregistrement des valeur normal du capteur
 boolean knock_active = false; // utilisation de la fonction knock
-
+#endif
 
 // variable pression moyenne
 
 int correction_pressure = 400;   // gestion de la valeur du capteur a pression atmo se met a jour lors de lancement
 int map_pressure_kpa = 100;
+int pressure_kpa_ADC= 1000;
 int previous_map_pressure_kpa = 100;
 int MAP_accel = 100 ;  // kpa/s d'acceleration
-const int MAP_check_per_S = 4 ; // nombre de calcul par seconde d'acceleration / depression
-
-
+int sum_pressure = 0;
+byte count_pressure = 0;
+const byte nbre_mesure_pressure = 5;
+const int MAP_check_per_S = 8 ; // nombre de calcul par seconde d'acceleration / depression
+const int kpa_0V = 0; // Kpa reel lorsque le capteur indique 0V
+long temp_spark_dep = 0;
 
 // variable de loop
+long var1 = 0;
+long var2 = 0;
 unsigned long time_loop = 0;
 unsigned long time_reception = 0;
 const unsigned long interval_time_reception = 100; // check des ordres tout les 100 ms secondes
@@ -144,11 +189,11 @@ const unsigned long interval_time_reception = 100; // check des ordres tout les 
 unsigned long time_envoi = 0;
 const unsigned long interval_time_envoi = 400; // ECU / EC1 toute les 1 secondes
 unsigned long time_check_depression = 0;
-const unsigned long interval_time_check_depression = 1000 / MAP_check_per_S; // Depression x fois / seconde
+const unsigned long interval_time_check_depression = 1000 / (MAP_check_per_S * nbre_mesure_pressure); // Depression x fois / seconde
 unsigned long time_check_lambda = 0;
-const unsigned long interval_time_check_lambda = 200; // lambda 5 fois / seconde
+const unsigned long interval_time_check_lambda = 100; // lambda 5 fois / seconde
 unsigned long time_check_connect = 0; 
-const unsigned long interval_time_check_connect = 5000; // reconnection  1 fois /  5 seconde
+const unsigned long interval_time_check_connect = 30000; // reconnection  1 fois /  30 seconde
 
 unsigned long time_check_fuel_pump = 0; 
 const unsigned long interval_time_check_fuel_pump = 5000; // check de la pompe de fuel
@@ -181,8 +226,6 @@ const int eprom_adresseknock = 25; // emplacement eeprom du knock moyen
 boolean init_eeprom = true; // si true on re ecrit les carto au demarrage
 //-------------------------------------------- Initialise Parameters --------------------------------------------//
 void setup() {
-  // comptage du nbr de reboot
- // rebootcount();
   
   // pour ne pas lancer de faux SAW
   detachInterrupt(1);
@@ -203,20 +246,12 @@ digitalWrite(pin_pump,LOW);
   pinMode(pin_lambda, INPUT);
   digitalWrite (pin_lambda, LOW );
   
-   // analog write a 1mhz pour réduire le temps nécessaire
-//   #ifdef sbi
-//    sbi(ADCSRA,ADPS2);
-//    cbi(ADCSRA,ADPS1);
-//    cbi(ADCSRA,ADPS0);
-//  #endif
 
   // port serie
-  Serial.begin(115200);  
-  while (!Serial) { ; }// wait for serial port to connect. 
+  Serial.begin(115200); while (!Serial) { ; }// wait for serial port to connect. 
  
  #if KNOCK_USED == 1  
-   Serial1.begin(115200);  
-  while (!Serial1) { ; }// wait for serial port to connect. 
+   Serial1.begin(115200); while (!Serial1) { ; }// wait for serial port to connect. 
  #endif
 
   inputString.reserve(50);   //reserve 50 bytes for serial input - equates to 25 characters
@@ -238,15 +273,15 @@ if (init_eeprom == true) {debug ("Init des MAP EEPROM");init_de_eeprom();RAZknoc
  #endif 
 
 // Initialisationdu BT
-   ble_set_name(BT_name);
-   debug ("ready!");
-   ble_begin();  
+   ble_set_name(BT_name); debug ("ready!");ble_begin();  
 
  initpressure();
  inittimer(); // init des interruption Timer 5
 
  // initialisation du PIP interrupt 
-   attachInterrupt(1, pip_interupt, FALLING);                                //  interruption PIP signal de l'edis
+  attachInterrupt(1, pip_interupt, FALLING);                                //  interruption PIP signal de l'edis
+
+  injection_initiale();
 
 }
 
@@ -263,7 +298,11 @@ if (time_loop - time_reception > interval_time_reception){checkdesordres();time_
 
 
 // calcul du nouvel angle d avance / injection si des valeurs ont changÃ©s
-  if (newvalue == true) {calculdelavance();calcul_injection(); newvalue = false; }
+
+  if (newvalue == true) {
+    calcul_carto();
+
+    newvalue = false; }
 
 // puis on gere les fonctions annexe a declencher periodiquement
 
@@ -302,6 +341,8 @@ void initpressure(){
     correction_pressure += analogRead(MAP_pin);
   }
  correction_pressure =  (correction_pressure / 10);
+
+
 }
 
  void inittimer(){
