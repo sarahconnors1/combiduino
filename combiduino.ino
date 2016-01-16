@@ -152,7 +152,7 @@ int carto_actuel = 1; //cartographie en cours
 volatile boolean ignition_on = false; // gere si le SAW est envoyé non terminé
 
 // declaration pour le KNOCK
-#if KNOCK_USED == 1
+
 long knockvalue[23] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}; // accumulation des valuer de knock
 long knockcount[23] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}; // accumulation des count de knock
 long knockmoyen[23] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}; // accumulation des count moyen
@@ -163,7 +163,6 @@ int delta_knock = 0; // ecart par rapport a la moyenne enregistré
 const int count_knock_max = 8; // tout les 8 pip = 4 tour
 boolean knock_record = false; // enregistrement des valeur normal du capteur
 boolean knock_active = false; // utilisation de la fonction knock
-#endif
 
 // variable pression moyenne
 
@@ -360,6 +359,5 @@ void initpressure(){
 
  }
  
-
 
 
