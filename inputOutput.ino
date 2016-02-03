@@ -155,15 +155,23 @@ void checkdesordres(){
       correction_lambda_used = false;
       debug("AFR OFF");
     }
-    else if (inputString.startsWith("p") ) {//regulation lambda 
-      Req_Fuel_us += 1000;
+    else if (inputString.equals("p") ) {//ajustement pour reqfuel
+      Req_Fuel_us += 500;
       debug("plusreq");
     }
-    else if (inputString.startsWith("m") ) {//regulation lambda 
-      Req_Fuel_us -= 1000;
+    else if (inputString.equals("m") ) {//ajustement pour reqfuel 
+      Req_Fuel_us -= 500;
       debug("moinsreq");
     }
-   // RAZ c est traite 
+    else if (inputString.equals("ego w") ) {//write dans eeprom des corrections 
+      writeego_ram_eeprom();
+      debug("write ego");
+    }
+    else if (inputString.equals("ego p") ) {//imprime les corrections actuels 
+      printego_ram();
+      debug("print ego");
+    }
+    // RAZ c est traite 
      inputString = "";
      stringComplete = false;
    
@@ -474,12 +482,29 @@ if (output == true){
  // var1=map_value_us;
 var1 = AFR_actuel;
 //var2 = correction_lambda_actuel;
-var2 = acceleration_actuel;
+//var2 = acceleration_actuel;
    SortieBT = "EC1;" + String(carto_actuel) + ";" + String(correction_degre) +";"+String(var1)+";" + String(var2) ; 
  
  
    Send_to_BT(SortieBT); 
   }
  
- } 
+} 
 
+void printego_ram(){
+// ecrit sur l'eeprom la carto actuelle
+// gestion point de carto
+String txt="";
+  for (int nr_ligne = 0; nr_ligne < nombre_point_DEP; nr_ligne++) { // on parcout les ligne de la carto EEPROM
+    txt = "{";
+    for (int nr_RPM = 0; nr_RPM < nombre_point_RPM; nr_RPM++) { // on parcout les colonnes de la carto
+      if (nr_RPM == nombre_point_RPM - 1){
+        txt = txt +  String(Ego_map [nr_ligne][nr_RPM]); // cas du dernier 
+      }else{
+        txt = txt +  String(Ego_map [nr_ligne][nr_RPM]) + ",";
+      }
+    }
+    txt = txt + "},";
+    debug(txt);
+  }
+}
