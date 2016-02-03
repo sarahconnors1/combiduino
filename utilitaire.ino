@@ -4,7 +4,7 @@
 // gestion du mode debug avec renvoi vers la console
 void debug(String str){if (debugging == true){ Serial.println(str);} }
 
-
+void sndlog(String str){ Serial.println(str);} 
 
 // gestion du parsing
 String getValue(String data, char separator, int index){
@@ -39,7 +39,7 @@ unsigned int EEPROMReadInt(int p_address){
      return ((lowByte << 0) & 0xFF) + ((highByte << 8) & 0xFF00);
  }
  
- 
+/* 
 // free RAM check for debugging. SRAM for ATmega328p = 2048Kb.
 int availableMemory() {
     // Use 1024 with ATmega168
@@ -49,7 +49,7 @@ int availableMemory() {
         free(buf);
     return size;
 }
-
+*/
 
 
 //-------------------------------------------- Triggered when serial input detected --------------------------------------------//
@@ -62,4 +62,3 @@ int availableMemory() {
  }
  }
 #endif
-
