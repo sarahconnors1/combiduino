@@ -34,7 +34,5 @@ void checkBLE(){
   // si deconnection on reset la carte BLE
 if (!ble_connected()){
   ble_reset(BLE_reset_pin);
-  debug("Reset BLE");
   }
 }  
-
