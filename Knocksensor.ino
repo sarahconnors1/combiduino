@@ -40,15 +40,18 @@ int vol3 = k3.toInt();
 // gestion enregistrement du knock
 //--------------------------------------------- 
 void recordknock(){
+#if KNOCK_USED == 1 
  knock_record = true;
   for (int n= 0; n < nombre_point_RPM; n++) {
    knockvalue[n] = 0;
    knockcount[n] = 0;
   } 
+#endif  
 } 
 
 // SAV des moyennes en EEPROM
 void saveknock(){
+#if KNOCK_USED == 1 
   knock_record = false;
   int value = 0;
   for (int n= 0; n < nombre_point_RPM; n++) {
@@ -60,19 +63,24 @@ void saveknock(){
   EEPROM.write(eprom_adresseknock + n,  value );
   }
   initknock();
+#endif
 }
 
 // charge les valeurs moyenne au demarrage
 void initknock(){
+#if KNOCK_USED == 1 
   for (int n= 0; n < nombre_point_RPM; n++) {
     knockmoyen[n] = EEPROM.read(eprom_adresseknock + n);
   }
+#endif
 }
 
 void RAZknock(){
+#if KNOCK_USED == 1 
   for (int n= 0; n < nombre_point_RPM; n++) {
     EEPROM.write(eprom_adresseknock + n,  0 );
   }
+#endif
 }
 
    // si on divise par 32
