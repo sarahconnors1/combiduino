@@ -4,59 +4,81 @@
 //----------------------------------------------------------
 
 void calcul_injection(){
+
 #if INJECTION_USED == 1  
-acceleration_actuel =  MAP_ACCEL(MAP_accel);
+
+
+
+#if TPS_USED == 1
+  PW_accel_actuel_us =  MAP_ACCEL(TPS_accel);
+#endif
+#if TPS_USED == 0
+  PW_accel_actuel_us =  MAP_ACCEL(MAP_accel);
+#endif
+
 correction_lambda_actuel = correction_lambda();
 VE_actuel = VE_MAP(engine_rpm_average, map_pressure_kpa);
+int WAS_actuel = WAS();
 
   // le temps d'injection est :  temps d'ouverture injecteur + le max a pleine puissance (Req_Fuel) * VE de la map en % * Correction enrichissement en % * corection lambda en %
-
  
-  injection_time_us =  Req_Fuel_us  
+   injection_time_us =  Req_Fuel_us  
   * (VE_actuel/float(100) )
   * (map_pressure_kpa / float(100) )
   * (correction_lambda_actuel /float(100)  )
+  * (WAS_actuel / float(100)  )
   ;
 
-//acceleration_actuel = 0;
-// injection_time_us =  (injection_time_us +  previous_injection_time_us) / 2;
-//previous_injection_time_us = injection_time_us;
-  
-tick_injection  = ( injection_time_us  + injector_opening_time_us + acceleration_actuel )* prescalertimer5 ;
-
-debug("ms;" + String(time_loop) + ";reqfuel;" + String(Req_Fuel_us) + ";ptRPM;" + String(point_RPM) + ";ptKPA;" + String(point_KPA) + ";RPM;" + String(engine_rpm_average)
-+ ";KPA;" + String(map_pressure_kpa) + ";MAPAccel;" + String(MAP_accel) + ";PhAccel;" + String(accel_state_actuel) + ";InjACC;" + String(acceleration_actuel)  + ";inj;" +
-String(injection_time_us) + ";VE;" + String(VE_actuel)  +";AFR;" + String(AFR_actuel) + ";corlbda;" + String(correction_lambda_actuel ) + ";DEG;"+ String(Degree_Avance_calcul) + ";nbrsprk;" + String (nbr_spark - temp_spark_dep) ); 
-
- temp_spark_dep = nbr_spark;
- #endif
+tick_injection  = ( injection_time_us  + injector_opening_time_us + PW_accel_actuel_us )* prescalertimer5 ;
+#endif
 }
+
+//--------------------------------------------------------
+// Enrichissemnt a près démarrage pendant une période donnée
+//--------------------------------------------------------
+int WAS(){
+if (nbr_spark < after_start_nb_spark ){ // on corrige tous les x tour 
+  return enrichissement_after_start;
+}else{
+  return 100;
+}
+}
+
+
 
 // ----------------------------------------------------------
 // recherche du coefficient  a appliquer suivant la valeur LAMBDA
 // ----------------------------------------------------------
 int correction_lambda(){
-if (correction_lambda_used == true ){
+
+byte objectif = 130;
+byte Ego = 100;
+float correction = 0;
+float erreur = 0;
+
+objectif = AFR_map[point_KPA][point_RPM];
+Ego = Ego_map[point_KPA][point_RPM]; // correction historique
+
+if (  (correction_lambda_used == true ) and (!BIT_CHECK(running_mode,BIT_ENGINE_MAP)  )  and (!BIT_CHECK(running_mode,BIT_ENGINE_IDLE ) )  ) { //correction lambda et pas d'acceleration en cours et pas au ralenti
  if (nbr_spark >= last_correction_lambda_spark + correction_lambda_every_spark ){ // on corrige tous les x tour 
+
     last_correction_lambda_spark=nbr_spark;
-    if ( (correction_lambda_actuel < max_lambda_cor)  ) { // on peut augmenter le pourcentage = enrichir 
-      if (AFR_actuel > 120){
-      return   (correction_lambda_actuel + increment_correction_lambda);
-      }
-    }
-    if  (correction_lambda_actuel > min_lambda_cor){ // on peut diminuer le pourcentage = appauvrir
-      if (AFR_actuel < 120){    
-        return (correction_lambda_actuel - increment_correction_lambda);
-      }
-    }
-    return correction_lambda_actuel;
+    erreur = 100 - ( (objectif - AFR_actuel) * float(100)  / float(objectif) ) ;  // calcul de l'erreur en cours
+   
+    correction = Ego - ((Ego - erreur) * float(Kp_pourcent)) / float(100);          // correction historique - (ecart historique/erreur actuel) * Kp%
+    
+    if (correction > max_lambda_cor){correction = max_lambda_cor;}
+    if (correction < min_lambda_cor){correction = min_lambda_cor;}
+  
+    Ego_map[point_KPA][point_RPM] = correction; // MAJ historique 
+    return correction;
   }else{
     return correction_lambda_actuel;
   }
-
 }else{
   return 100;
 }
+
 }
 
 
@@ -119,39 +141,56 @@ return VE;
 // renvoi une valeur dependante de l'acceleration (kpa/s ) 
 // on compare l'acceleration avec le tableau MAP_kpas
 // on renvoie l'enrichissement du tableau MAP_acceleration
-int MAP_ACCEL(int MAP_accel_){
-float extrafuel = 0; // 0 = Pas d'enrichissement
-   int bin = 0;
 
-   if ( (nbr_spark < last_accel_spark + accel_every_spark) and (accel_state_actuel >0) ){ // si en cours d'acceleraion
-    return acceleration_actuel;
-   }else{
-      if(MAP_accel_ <MAP_kpas[0]){                // check si on est dans les limites haute/basse
-        bin = 0;
-      } else { 
-        if(MAP_accel_ >=MAP_kpas[MAP_acc_max -1]) {      // 
+int MAP_ACCEL(int BASE_accel){
+ float extrafuel = 0; // 0 = Pas d'enrichissement
+ byte bin = 0;
+ byte bin1 = 0;
+ int acc_ = 0;
+if ( (nbr_spark < last_accel_spark + accel_every_spark) and ( BIT_CHECK(running_mode,BIT_ENGINE_MAP)) and (saved_accel>BASE_accel)    ){ // si en cours d'acceleraion et accel pas fini et acceleration actuel < accerleration initiale
+  return PW_accel_actuel_us;
+}else{
+  if (BASE_accel > accel_mini){
+    if(BASE_accel <MAP_kpas[0]){                // check si on est dans les limites haute/basse
+       bin = 0;
+       bin1 = 0;
+    } else { 
+      if(BASE_accel >=MAP_kpas[MAP_acc_max -1]) {      // 
           bin = MAP_acc_max -1;
-        }else{
+          bin1 = MAP_acc_max -1;
+      }else{
           // retrouve la valeur inferieur 
-          while(MAP_accel_ > MAP_kpas[bin]){bin++;} // du while
-          if (bin > 0){bin--;}
-       
-        }
+         while(BASE_accel > MAP_kpas[bin]){bin++;} // du while
+         if (bin > 0){bin--;}
+         bin1 = bin +1;
       }
-    extrafuel =  float(Req_Fuel_us  / float(100) );
-    extrafuel = extrafuel * MAP_acceleration[bin] ;
-     if (extrafuel == 0){
-      accel_state_actuel = 0;
-    } else if (extrafuel > 0){ // on demarre un nouvelle accel
-      accel_state_actuel = 1;
-      last_accel_spark = nbr_spark;
-      
     }
-   
+  
+    if (bin == bin1){
+      acc_ = MAP_acceleration[bin] ;  
+    }else{
+      // interpolation
+      acc_ = map(BASE_accel , MAP_kpas[bin] , MAP_kpas[bin+1], MAP_acceleration[bin], MAP_acceleration[bin+1] );
+    }   
+    extrafuel =  float(Req_Fuel_us  / float(100) );
+    extrafuel = extrafuel * acc_ ;
+        
+    if (extrafuel == 0){
+      cbi(running_mode,BIT_ENGINE_MAP);
+    } else { // on demarre un nouvelle accel
+      sbi(running_mode,BIT_ENGINE_MAP);
+      last_accel_spark = nbr_spark;    
+    }
+    saved_accel = BASE_accel; // on sauvegarde l'accel actuel 
     return extrafuel;
+ 
+  }else{ // si inferieur au mini
+   // si en dessou du mini
+   cbi(running_mode,BIT_ENGINE_MAP);
+    return 0;  
   }
+ }
 }
-
 
 //-----------------------------------------------------------
 //           Gestion de la sonde lambda
@@ -221,9 +260,11 @@ void injection_initiale(){
 void checkpump(){
  
   // check pour arreter la pompe
-  if (running_mode != Stopping){
+  if (BIT_CHECK(running_mode, BIT_ENGINE_RUN) || BIT_CHECK(running_mode, BIT_ENGINE_CRANK) )  { // si c est pas arrete (running ou cranking)
     digitalWrite(pin_pump,LOW); 
   }else{
     digitalWrite(pin_pump,HIGH);
   }
 }
+
+
