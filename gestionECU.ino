@@ -5,34 +5,40 @@
 
 void calcul_carto(){
   // calcul de la position actuelle dans la carto
- int map_rpm_index = decode_rpm(engine_rpm_average);                      // retrouve index RPM
- int map_pressure_index = decode_pressure(map_pressure_kpa);       // retrouve index pression
- if ((map_rpm_index != point_RPM) or (map_pressure_index != point_KPA) ){
-  bin_carto_change = true;  
- }
-  point_RPM = map_rpm_index;            // retrouve index RPM
-  point_KPA = map_pressure_index;       // retrouve index pression
+  
+ point_RPM = decode_rpm(engine_rpm_average);                      // retrouve index RPM
+ point_KPA = decode_pressure(map_pressure_kpa);       // retrouve index pression
 
- // calcul du mode actuel du moteur
-  // Stopping 1
-  // Cranking  2
-  // Idling  3
-  // Running  10
-    
+gestionTPSMAPdot(); // calcul de l'acceleration kpa/s et tps %/s
+  
   // check si le moteur tourne
-  if ( (micros() - pip_old) > 100000){engine_rpm_average = 0;}
+if ( (micros() - pip_old) > 100000){engine_rpm_average = 0;}
+   
+if ( (engine_rpm_average < rev_mini) && (engine_rpm_average > 0) ) {
+   sbi(running_mode,BIT_ENGINE_CRANK);
+}else{
+   cbi(running_mode,BIT_ENGINE_CRANK);
+}
 
-  running_mode = Running;
-  if (engine_rpm_average == 0){
-    running_mode = Stopping;
-  } else  if (engine_rpm_average < rev_mini){
-    running_mode = Cranking;
-  }
+if (engine_rpm_average == 0){
+  cbi(running_mode,BIT_ENGINE_RUN);
+}else{
+  sbi(running_mode,BIT_ENGINE_RUN); 
+}
+
+// mode idle 
+if ( (engine_rpm_average <= RPM_idle_max) and (engine_rpm_average > rev_mini) and  (map_pressure_kpa <= MAP_idle_max) and (TPS_actuel <= TPS_idle_max) ){
+  sbi(running_mode,BIT_ENGINE_IDLE); 
+}else{
+  cbi(running_mode,BIT_ENGINE_IDLE);
+}
+
 
 // recalcul des nouvelles valeur avance et injection
     calculdelavance();
     calcul_injection();
-  
+
+
 }
 
 void calculdelavance(){
@@ -63,17 +69,64 @@ if (count_pressure >= nbre_mesure_pressure){
    int kpa = map(kpa_moyen,0,correction_pressure,kpa_0V,101);  // on converti la moyenne en KPA   
    count_pressure = 0;
    sum_pressure = 0;
+  // on normalise 
+  #if VACUUMTYPE == 2 // avant papillon
+    if (kpa < pressure_axis[0]){kpa = pressure_axis[0]; }
+  #endif
+  #if VACUUMTYPE == 1 // collecteur
+    if (kpa < pressure_axis[nombre_point_DEP-1]) {kpa = pressure_axis[nombre_point_DEP-1]; }
+  #endif
    if (kpa != map_pressure_kpa ) {newvalue=true;}
-   map_pressure_kpa = kpa;
-   MAP_accel = (map_pressure_kpa - previous_map_pressure_kpa) * MAP_check_per_S; // calcul en Kpa/S
-   previous_map_pressure_kpa =  map_pressure_kpa;
+  // on lisse
+  kpa = map_pressure_kpa + ( (kpa - map_pressure_kpa) * lissage_kpa / float(100) );
 
-  
+// nouvelle valeur   
+  map_pressure_kpa = kpa;
+  last_MAP_time = millis();
+
 }   
    
 }  
 
+// calcul du nombre de KPA / TPS par seconde 
+void gestionTPSMAPdot(){
 
+// Pour TPS ///////////////////////////////
+  if ( (last_TPS_time - previous_TPS_time) > 0 ){
+    TPS_accel = (TPS_actuel - previous_TPS) * float(1000)/ (last_TPS_time - previous_TPS_time) ; // calcul en %/S
+  }else{
+    TPS_accel = TPS_accel; // si pas de nouvel valeur
+  }   
+  if (TPS_accel < -50 ){TPS_accel = -50;} // sanity check
+  previous_TPS =  TPS_actuel;
+  previous_TPS_time = last_TPS_time;
+
+// pour KPA ///////////////////
+  if ( (last_MAP_time - previous_MAP_time) > 0 ){
+      MAP_accel = (map_pressure_kpa - previous_map_pressure_kpa) * float(1000) * float(1000) / (last_MAP_time - previous_MAP_time) ; // calcul en %/S
+  }else{
+      MAP_accel = MAP_accel; // si pas de nouvel valeur
+  }   
+  if (MAP_accel < -50 ){MAP_accel = -50;} // sanity check
+
+  previous_map_pressure_kpa =  map_pressure_kpa;
+  previous_MAP_time = last_MAP_time;
+}
+
+void gestionTPS(){
+  sum_TPS += analogRead(TPS_pin);
+  count_TPS++;
+// debug(String(analogRead(TPS_pin)));
+ if (count_TPS >= nbre_mesure_TPS){
+   int TPS_moyen = sum_TPS / count_TPS;  
+   int TPS = map(TPS_moyen,tps_lu_min,tps_lu_max,0,100);  // on converti la moyenne en %  
+   count_TPS = 0;
+   sum_TPS = 0;
+   if (TPS != TPS_actuel ) {newvalue=true;}
+   TPS_actuel = TPS;
+   last_TPS_time = millis();
+ }
+}
 
 //-------------------------------------------- retrouve l'index du tableau pour les RPM --------------------------------------------// 
 int decode_rpm(int rpm_) { // renvoi la valeur inférieur du bin
@@ -127,6 +180,8 @@ int decode_pressure(int pressure_) { // renvoi la valeur inférieur du bin
 //-------------------------------------------- Function to generate SAW signal to return to EDIS --------------------------------------------//
 //-------------------------------------------- PIP signal interupt --------------------------------------------// 
 void pip_interupt()  {
+  unsigned int timeout_injection = 0;
+  
  //gestion plus simple des rpm moyens
 if ((digitalRead(interrupt_X) == LOW) and ( (micros() - pip_old) > debounce ) ) {   
     pip_old = micros();pip_count++;nbr_spark++;
@@ -149,7 +204,7 @@ if ((digitalRead(interrupt_X) == LOW) and ( (micros() - pip_old) > debounce ) ) 
 //---------------------
 //gestion des interruption 
 //timer 5A pour ignition
-//timer 5B pour injection 
+//timer 5B / 5C pour injection 
 //---------------------
    
 unsigned int timeout_ignition = TCNT5 + tick; 
@@ -163,12 +218,33 @@ unsigned int timeout_ignition = TCNT5 + tick;
 cylindre_en_cours++;
 if (cylindre_en_cours>4){cylindre_en_cours=1;}
 
-if ( (cylinder_injection[cylindre_en_cours - 1] == true)||(running_mode == Cranking)||(running_mode == Stopping) ) { // si on doit injecter ou tous les tours au demmarrage
-  unsigned int timeout_injection = TCNT5 + tick_injection; 
-  OCR5B = timeout_injection;            // compare match register 
-  TIMSK5 |= (1 << OCIE5B);  // enable timer compare interrupt
-  digitalWrite(pin_injection,HIGH);  // send output to logic level HIGH (5V)
-}   
+#if ALTERNATESQUIRT == 0 // Si gestion des injecteurs simultanés
+  if ( (cylinder_injection[cylindre_en_cours - 1] == true)||(BIT_CHECK(running_mode, BIT_ENGINE_CRANK))|| !(BIT_CHECK(running_mode, BIT_ENGINE_RUN) ) ) { // si on doit injecter ou tous les tours au demmarrage
+    timeout_injection = TCNT5 + tick_injection; 
+    OCR5B = timeout_injection;            // compare match register 
+    TIMSK5 |= (1 << OCIE5B);  // enable timer compare interrupt
+    digitalWrite(pin_injection,HIGH);  // send output to logic level HIGH (5V)
+    OCR5C = timeout_injection;            // compare match register 
+    TIMSK5 |= (1 << OCIE5C);  // enable timer compare interrupt
+    digitalWrite(pin_injection2,HIGH);  // send output to logic level HIGH (5V)
+  }   
+#endif
+
+#if ALTERNATESQUIRT == 1 // Si gestion des injecteurs alterné
+  if ( (cylinder_injection[cylindre_en_cours - 1] == true)||(BIT_CHECK(running_mode, BIT_ENGINE_CRANK))|| !(BIT_CHECK(running_mode, BIT_ENGINE_RUN) ) ) { // si on doit injecter ou tous les tours au demmarrage
+        timeout_injection = TCNT5 + tick_injection; 
+    OCR5B = timeout_injection;            // compare match register 
+    TIMSK5 |= (1 << OCIE5B);  // enable timer compare interrupt
+    digitalWrite(pin_injection,HIGH);  // send output to logic level HIGH (5V)
+  } 
+  if ( (cylinder_injection2[cylindre_en_cours - 1] == true)||(BIT_CHECK(running_mode, BIT_ENGINE_CRANK))|| !(BIT_CHECK(running_mode, BIT_ENGINE_RUN) ) ) { // si on doit injecter ou tous les tours au demmarrage
+    timeout_injection = TCNT5 + tick_injection; 
+    OCR5C = timeout_injection;            // compare match register 
+    TIMSK5 |= (1 << OCIE5C);  // enable timer compare interrupt
+    digitalWrite(pin_injection2,HIGH);  // send output to logic level HIGH (5V)
+  }  
+#endif
+
 #endif
   }
 }
@@ -180,13 +256,16 @@ ISR(TIMER5_COMPA_vect){
     digitalWrite(pin_ignition,LOW);
     digitalWrite(SAW_pin,LOW);    // on arrte le saw
  ignition_on = false;  
- //   TIMSK5 &= ~(1 << OCIE5A); //Turn off this output
  } 
 
  ISR(TIMER5_COMPB_vect){ 
 //Timer 5 B pour arreter l injection
     digitalWrite(pin_injection,LOW);    // on arrte l'injection
- //   TIMSK5 &= ~(1 << OCIE5B); //Turn off this output
+ } 
+
+  ISR(TIMER5_COMPC_vect){ 
+//Timer 5 C pour arreter l injection
+    digitalWrite(pin_injection2,LOW);    // on arrte l'injection
  } 
    
 
