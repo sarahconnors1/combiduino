@@ -34,11 +34,34 @@
 // 2050 ----->2441 carto 5
 // 2450 ----> 2469 kpa 5
 // 2470 ----> 2550 rpm 5
+// 2550 ----->2941 carto EGO
 //etc
 
 //--------------------------------------------------------------
 // ecriture de la carto EEPROM vers la carto en memoire RAM
 //--------------------------------------------------------------
+void writeego_ram_eeprom(){
+// ecrit sur l'eeprom la carto actuelle
+// gestion point de carto
+  for (int nr_ligne = 0; nr_ligne < nombre_point_DEP; nr_ligne++) { // on parcout les ligne de la carto EEPROM
+     for (int nr_RPM = 0; nr_RPM < nombre_point_RPM; nr_RPM++) { // on parcout les colonnes de la carto
+      int adresse  = (nr_ligne * nombre_point_RPM) + nr_RPM + eprom_ego; // on retrouve l'adresse du dÃ©but de la ligne a Ã©crirr 
+      EEPROM.write(adresse ,  Ego_map [nr_ligne][nr_RPM] );
+    }
+  }
+}
+void writeego_eeprom_ram(){
+// ecrit sur l'eeprom la carto actuelle
+// gestion point de carto
+  for (int nr_ligne = 0; nr_ligne < nombre_point_DEP; nr_ligne++) { // on parcout les ligne de la carto EEPROM
+     for (int nr_RPM = 0; nr_RPM < nombre_point_RPM; nr_RPM++) { // on parcout les colonnes de la carto
+      int adresse  = (nr_ligne * nombre_point_RPM) + nr_RPM + eprom_ego; // on retrouve l'adresse du dÃ©but de la ligne a Ã©crirr 
+     Ego_map [nr_ligne][nr_RPM] = EEPROM.read(adresse);
+    }
+  }
+}
+
+
 void writecarto_eeprom_ram(int carto_eeprom) {
 // carto 1 -> 5
 int nr_ligne = 0;
@@ -159,13 +182,16 @@ void init_de_eeprom() {
   EEPROMWriteInt(eprom_rev_min, rev_mini); // rev max par defaut
   EEPROMWriteInt(eprom_avance, 0); // avance suppelmentaire par defaut
   EEPROM.write(eprom_knock, 0); // knock par defaut a non
+
+  writeego_ram_eeprom(); // ecriture en RAM de la correction EGO
 }
 //-------------------------------------------------------------------
 //        LECTURE DES PARAMETRE DE L'EEPROM
 //            AU DEMARRAGE
 //-------------------------------------------------------------------
 void read_eeprom() {
-
+  
+   writeego_eeprom_ram(); // Lecture de la correction EGO
 // lecture carto actuel
   carto_actuel = EEPROM.read(eprom_carto_actuel);
   if ( (carto_actuel < 0) || (carto_actuel > nombre_carto_max) ) { // carto invalide on remet la carto 1
@@ -255,6 +281,8 @@ void read_eeprom() {
     EEPROMWriteInt(eprom_avance, 25); // rev min par defaut
     correction_degre = 25;
    } 
+
+
 }
 
 
