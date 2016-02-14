@@ -127,7 +127,7 @@ int rpm_axis[nombre_point_RPM]  =
 //          FLASH MEMORY
 //-----------------------------------------------------------
 #if VACUUMTYPE == 2 // avant papillon
- byte pressure_axis[nombre_carto_max][nombre_point_DEP] = {
+PROGMEM const byte pressure_axis_flash[nombre_carto_max][nombre_point_DEP] = {
  { 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 99}, // 17 carto 1
  { 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 99}, // 17 carto 2
  { 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 99}, // 17 carto 3
