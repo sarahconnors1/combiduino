@@ -2,7 +2,7 @@
 //  GESTION DES ENTREE SORTIE VERS DEBUG OU IPHONE
 //---------------------------------------------------------------
 
-//-------------Check des donnÃ©e entrante par le port serie-----------------------------
+//-------------Check des donnÃƒÂ©e entrante par le port serie-----------------------------
 void checkdesordres(){
   ble_do_events();
   Read_BT(); // lecture du BT
@@ -401,7 +401,7 @@ void get_kpa_iphone(){
   
   if ( (carto.toInt() >0) && (carto.toInt() <= nombre_carto_max)  && (point_kpa.toInt() <= nombre_point_DEP -1) && (kpa.toInt() >= 0 ) ){
     nr_carto = carto.toInt(); 
-    nr_carto-- ; // car la carto 1 -> pas de dÃ©calage
+    nr_carto-- ; // car la carto 1 -> pas de dÃƒÂ©calage
     write_eeprom_point_KPA (nr_carto , point_kpa.toInt() , kpa.toInt() );
   }
 }
@@ -420,7 +420,7 @@ void get_rpm_iphone(){
   
   if ( (carto.toInt() >0) && (carto.toInt() <= nombre_carto_max)  && (point_rpm.toInt() <= nombre_point_RPM -1) && (rpm.toInt() >= 0 ) ){
     nr_carto = carto.toInt(); 
-    nr_carto-- ; // car la carto 1 -> pas de dÃ©calage
+    nr_carto-- ; // car la carto 1 -> pas de dÃƒÂ©calage
     write_eeprom_point_RPM (nr_carto , point_rpm.toInt() , rpm.toInt() );
   }
 }
@@ -480,8 +480,8 @@ if (output == true){
   // parm 3 libre knock KNOCK MOYEN
   // parm 4 libre knock DIFFERENCE actuel - Moyen
  // var1=map_value_us;
-var1 = AFR_actuel;
-//var2 = correction_lambda_actuel;
+var1 = correction_lambda_actuel;
+var2 = AFR_actuel;
 //var2 = acceleration_actuel;
    SortieBT = "EC1;" + String(carto_actuel) + ";" + String(correction_degre) +";"+String(var1)+";" + String(var2) ; 
  
@@ -508,3 +508,4 @@ String txt="";
     debug(txt);
   }
 }
+
