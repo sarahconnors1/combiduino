@@ -7,7 +7,8 @@
 #define VACUUMTYPE 1  // 1= pour prise depression colecteur 2= pour prise depression amont papillon 
 #define ALTERNATESQUIRT 1 // 1 pour injecter a tour de role 0 pour injecter en meme temps
 #define TPS_USED 1 // 1 pour accel base sur TPS, 0 pour accel base sur KPA
-const byte VERSION= 22;   //version du combiduino
+#define SAW_WAIT 1 // 1 pour retarde le SAW de 10 degrée apres le PIP, 0 mode normal
+const byte VERSION= 35;   //version du combiduino
 //-------------------------------------------- Include Files --------------------------------------------//
 #include "variable.h"
 #include <avr/pgmspace.h>
@@ -26,24 +27,25 @@ const byte enrichissement_after_start = 130 ; // % d'enrichissemnt a après dém
 // phase normal
 unsigned int Req_Fuel_us = 10000 / nombre_inj_par_cycle;  // ouverture max des injecteurs 100% 
 const unsigned int injector_opening_time_us = 700; // temps d'ouverture de l'injecteur en us
+const byte lissage_kpa = 40 ;  // facteur lissage des KPA 100= pas de lissage 50 = fort lissage
 
 // phase ralenti
 const int RPM_idle_max = 1100; // valeur RPM max pour déclencher le mode idle
-const int MAP_idle_max = 45; // valeur MAP max pour déclencher le mode idle
-const int TPS_idle_max = 2; // valeur MAP max pour déclencher le mode idle
+//const int MAP_idle_max = 45; // valeur MAP max pour déclencher le mode idle
+const int TPS_idle_max = 3; // valeur MAP max pour déclencher le mode idle
 
 // phase acceleration
-int MAP_kpas[8] =        {-50,  0,   15,  80,  130,  200}; //valeur acceleration en kpa /s
+int MAP_kpas[8] =        {-50,  0,   10,  30,  60,  120}; //valeur acceleration en kpa /s
 int MAP_acceleration[8] ={ 0 ,  0,   30,  50,   100,   200} ; //valeur enrichissement en % de reqfuel
-const byte accel_mini = 15; // TPS_dot mini pour declencher un calcul
+const byte accel_mini = 10; // TPS_dot mini pour declencher un calcul
 const int accel_every_spark = 20;  // correction possible tous les x etincelle
 const int tps_lu_min = 2; // valeur ADC mini lu 
 const int tps_lu_max = 500; // valeur ADC max lu
 
 // correction par la lambda 
-int max_lambda_cor = 130; // correction maxi
-int min_lambda_cor = 70; // correction mini
-const byte Kp_pourcent = 30; // taux de correction lambda 0-> 100 facteur d'apprentissage
+int max_lambda_cor = 120; // correction maxi
+int min_lambda_cor = 80; // correction mini
+const byte Kp_pourcent = 10; // taux de correction lambda 0-> 100 facteur d'apprentissage
 
 
 
@@ -109,6 +111,7 @@ void setup() {
 
   injection_initiale();
   initlog();
+
 }
 
 
@@ -130,18 +133,19 @@ if (time_loop - time_reception > interval_time_reception){checkdesordres();time_
 
   // recalcul de la lambda
   if (time_loop - time_check_lambda > interval_time_check_lambda){lecturelambda();time_check_lambda = time_loop;}
+
+  // recalcul correction AFR
+  if (time_loop - time_check_AFR > interval_time_check_AFR){AFR_self_learning();time_check_AFR = time_loop;}
+  
   // gestions sortie pour module exterieur ECU / EC1
   if (time_loop - time_envoi > interval_time_envoi){gestionsortieECU();gestionsortieEC1();time_envoi = time_loop;}
 
 // gestions connection BLE
   if (time_loop - time_check_connect > interval_time_check_connect){checkBLE();time_check_connect = time_loop;}
 // check demarrage de la pompe fuel
-  if (time_loop - time_check_fuel_pump > interval_time_check_fuel_pump){temp=micros();checkpump();time_check_fuel_pump = time_loop;debug("t = " + String(micros() - temp));}
+  if (time_loop - time_check_fuel_pump > interval_time_check_fuel_pump){checkpump();time_check_fuel_pump = time_loop;}
 
-// gestion des logs
-//if (time_loop - time_log > interval_time_log){temp=micros();Megalog();time_log = time_loop;debug("calcul" + String(micros() - temp));}
-
-   
+  
 
 }
 
@@ -177,8 +181,8 @@ void initpressure(){
  
 void initlog(){
 
-  sndlog("Time;reqfuel;ptRPM;ptKPA;RPM;Load;MAPdot;PhAccel;PWacc;PW;Gve;AFR;Gego;SparkAdv;TPS;TPSdot;idle" ); 
-  sndlog("ms;uS;pt;pt;tr/min;kpa;kpa/s;on/off;uS;uS;%;AFR;%;deg;%;%/s;on/off" ); 
+  sndlog("Time;reqfuel;ptRPM;ptKPA;RPM;Load;MAPdot;PhAccel;PWacc;PW;Gve;AFR;Gego;SparkAdv;TPS;TPSdot;idle;carto;ms" ); 
+  sndlog("ms;uS;pt;pt;tr/min;kpa;kpa/s;on/off;uS;uS;%;AFR;%;deg;%;%/s;on/off;nbr;on/off" ); 
 
 }
 
@@ -202,7 +206,9 @@ String logsend = "";
  +  Degree_Avance_calcul  +  ';'  
  +  TPS_actuel  +  ';' 
  +  TPS_accel  + ';'
- +   bitRead(running_mode, BIT_ENGINE_IDLE )  
+ +   bitRead(running_mode, BIT_ENGINE_IDLE )  + ';'
+ +  carto_actuel  + ';'
+ +  multispark
   ;
 
 sndlog(logsend);
