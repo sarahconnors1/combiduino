@@ -13,7 +13,8 @@ gestionTPSMAPdot(); // calcul de l'acceleration kpa/s et tps %/s
   
   // check si le moteur tourne
 if ( (micros() - pip_old) > 100000){engine_rpm_average = 0;}
-   
+
+  // Check si en cours de dÃ©marrage 
 if ( (engine_rpm_average < rev_mini) && (engine_rpm_average > 0) ) {
    sbi(running_mode,BIT_ENGINE_CRANK);
 }else{
@@ -27,7 +28,7 @@ if (engine_rpm_average == 0){
 }
 
 // mode idle 
-if ( (engine_rpm_average <= RPM_idle_max) and (engine_rpm_average > rev_mini) and  (map_pressure_kpa <= MAP_idle_max) and (TPS_actuel <= TPS_idle_max) ){
+if ( (engine_rpm_average <= RPM_idle_max) and (engine_rpm_average > rev_mini) and (TPS_actuel <= TPS_idle_max) ){
   sbi(running_mode,BIT_ENGINE_IDLE); 
 }else{
   cbi(running_mode,BIT_ENGINE_IDLE);
@@ -42,11 +43,11 @@ if ( (engine_rpm_average <= RPM_idle_max) and (engine_rpm_average > rev_mini) an
 }
 
 void calculdelavance(){
-// calcul du nombre de degrÃ© d'avance suivant la map
-// puis pour le saw du dÃ©lai en microseconds
-// puis en tick du timer (1 tick / 0,5 us)
+// calcul du nombre de degrÃƒÂ© d'avance suivant la map
+// puis pour le saw du dÃƒÂ©lai en microseconds
+// puis en tick du timer (1 tick = 0,5 us)
   
-Degree_Avance_calcul = ignition_map[point_KPA][point_RPM] + correction_degre ;  
+Degree_Avance_calcul = IGN_MAP(engine_rpm_average, map_pressure_kpa) + correction_degre ;  
 
 if (fixed == true){                                   
    map_value_us = 1536 - (25.6 * fixed_advance);
@@ -56,11 +57,75 @@ if (fixed == true){
     } else{ map_value_us = 1536 - (25.6 * Degree_Avance_calcul);}                           // Otherwise read from map
   }
   if (map_value_us < 64){ map_value_us = 64; }    // If map_value_us is less than 64 (smallest EDIS will accept), set map_value_us to 64us
+
  tick = map_value_us * 2; // pour le timer  
+// calcul du delai nÃ©cessaire pour envoyer le SAW x degrÃ© aprÃ¨s le PIP
+delay_ignition =   ((60000000L /engine_rpm_average)* angle_delay_SAW /360L ) * 2 ; 
 }
 
 
-// gestion de la nouvelle dépression
+//--------------------------------------------------------------
+// Gestion de l'interpolation du degré d'avance suivant les points adjacent de la MAP 
+//--------------------------------------------------------------
+
+float IGN_MAP(int rpm, int pressure){
+
+
+  int map_rpm_index_low = point_RPM;                      // retrouve index RPM inferieur
+  int map_rpm_index_high = 0;
+  int map_pressure_index_low = point_KPA;       // retrouve index pression inferieur
+  int map_pressure_index_high = 0;
+  float IGN_min = 0;
+  float IGN_max = 0;
+  float IGN = 10;
+
+#if VACUUMTYPE ==1 // prise sur collecteur   
+   // calcul des valeurs des bin superieur
+  if ((rpm <= rpm_axis[nombre_point_RPM-1])|| (rpm <= rpm_axis[0]) ) { // si on est > a tour maxi ou si on est < a tour mini high = low
+    map_rpm_index_high = map_rpm_index_low;
+  } else{  
+    map_rpm_index_high = map_rpm_index_low + 1;
+  }
+  
+  if ((pressure <= pressure_axis[nombre_point_DEP-1]) || (pressure >= pressure_axis[0])) { // si on est > a kpa maxi ou si on est < a kpa mini high = low
+    map_pressure_index_high = map_pressure_index_low;
+  } else{  
+    map_pressure_index_high = map_pressure_index_low + 1;
+  }  
+  // interpolation entre les 4 valeurs de la map
+ //            lowRPM      highRPM
+ // lowkpa      A              B        IGN_min = interpolation A et B
+ // highjpa     C              D        IGN_max = interpolation C et D
+
+ // d'abord VE versus RPM
+ if (map_rpm_index_low != map_rpm_index_high){ // si < x tour/min ou > y tour/min -> si on est dans la MAP
+    IGN_min = mapfloat(rpm, rpm_axis[map_rpm_index_low],rpm_axis[map_rpm_index_high], ignition_map [map_pressure_index_low] [map_rpm_index_low],ignition_map [map_pressure_index_low] [map_rpm_index_high]);
+    IGN_max = mapfloat(rpm, rpm_axis[map_rpm_index_low],rpm_axis[map_rpm_index_high], ignition_map [map_pressure_index_high] [map_rpm_index_low],ignition_map [map_pressure_index_high] [map_rpm_index_high]);
+ }else{
+    IGN_min = ignition_map [map_pressure_index_low] [map_rpm_index_low];
+    IGN_max = ignition_map [map_pressure_index_high] [map_rpm_index_low];
+ }
+ 
+ // puis entre VE_min / max et kpa
+  if (map_pressure_index_low != map_pressure_index_high){
+  IGN = mapfloat(pressure ,pressure_axis[map_pressure_index_low],pressure_axis[map_pressure_index_high], IGN_min, IGN_max);
+  }else{
+    IGN = IGN_min;
+  } 
+#endif
+#if VACUUMTYPE == 2 // prise en amont papillon
+ IGN = ignition_map[point_KPA][point_RPM]
+#endif
+
+
+   
+return IGN;
+}
+
+
+
+
+// gestion de la nouvelle dÃ©pression
 void gestiondepression(){
 sum_pressure += analogRead(MAP_pin);
 count_pressure++;
@@ -103,7 +168,7 @@ void gestionTPSMAPdot(){
 
 // pour KPA ///////////////////
   if ( (last_MAP_time - previous_MAP_time) > 0 ){
-      MAP_accel = (map_pressure_kpa - previous_map_pressure_kpa) * float(1000) * float(1000) / (last_MAP_time - previous_MAP_time) ; // calcul en %/S
+      MAP_accel = (map_pressure_kpa - previous_map_pressure_kpa) * float(1000) / (last_MAP_time - previous_MAP_time) ; // calcul en %/S
   }else{
       MAP_accel = MAP_accel; // si pas de nouvel valeur
   }   
@@ -129,7 +194,7 @@ void gestionTPS(){
 }
 
 //-------------------------------------------- retrouve l'index du tableau pour les RPM --------------------------------------------// 
-int decode_rpm(int rpm_) { // renvoi la valeur inférieur du bin
+int decode_rpm(int rpm_) { // renvoi la valeur infÃ©rieur du bin
   int map_rpm = 0;
    if(rpm_ <rpm_axis[0]){                // check si on est dans les limites haute/basse
      map_rpm = 0;
@@ -146,7 +211,7 @@ int decode_rpm(int rpm_) { // renvoi la valeur inférieur du bin
 }
 //--------------------------------------------retrouve l index du tableau de la pression --------------------------------------------//
 #if VACUUMTYPE == 2
-int decode_pressure(int pressure_) { // renvoi la valeur inférieur du bin
+int decode_pressure(int pressure_) { // renvoi la valeur infÃ©rieur du bin
    int map_pressure = 0;
    if(pressure_ < pressure_axis[0]){
      map_pressure = 0;
@@ -162,7 +227,7 @@ int decode_pressure(int pressure_) { // renvoi la valeur inférieur du bin
 #endif
 
 #if VACUUMTYPE == 1
-int decode_pressure(int pressure_) { // renvoi la valeur inférieur du bin
+int decode_pressure(int pressure_) { // renvoi la valeur infÃ©rieur du bin
    int map_pressure = 0;
    if(pressure_ > pressure_axis[0]){
      map_pressure = 0;
@@ -196,77 +261,109 @@ if ((digitalRead(interrupt_X) == LOW) and ( (micros() - pip_old) > debounce ) ) 
     first_multispark = false; 
   }
 
-#if KNOCK_USED == 1
- digitalWrite(pin_ignition,HIGH); // pour le knock 
- ignition_on = true;
-#endif
+
 
 //---------------------
 //gestion des interruption 
 //timer 5A pour ignition
 //timer 5B / 5C pour injection 
 //---------------------
-   
+
+#if SAW_WAIT== 0   
 unsigned int timeout_ignition = TCNT5 + tick; 
   OCR5A = timeout_ignition; 
   TIMSK5 |= (1 << OCIE5A);  // enable timer compare interrupt
    // on envoie le SAW
   digitalWrite(SAW_pin,HIGH);  // send output to logic level HIGH (5V)
+  #if KNOCK_USED == 1
+    digitalWrite(pin_ignition,HIGH); // pour le knock 
+    ignition_on = true;
+  #endif
+#endif
+
+#if SAW_WAIT== 1
+// on retarde le SAW de X microseconds
+unsigned int timeout_ignition = TCNT5 + delay_ignition; 
+OCR5A = timeout_ignition; 
+TIMSK5 |= (1 << OCIE5A);  // enable timer compare interrupt
+ignition_mode = IGNITION_PENDING;
+#endif
 
 #if INJECTION_USED == 1 
- // gestion dy cylindre en cours d'allumage
-cylindre_en_cours++;
-if (cylindre_en_cours>4){cylindre_en_cours=1;}
+  // gestion dy cylindre en cours d'allumage
+  cylindre_en_cours++;
+  if (cylindre_en_cours>4){cylindre_en_cours=1;}
 
-#if ALTERNATESQUIRT == 0 // Si gestion des injecteurs simultanés
-  if ( (cylinder_injection[cylindre_en_cours - 1] == true)||(BIT_CHECK(running_mode, BIT_ENGINE_CRANK))|| !(BIT_CHECK(running_mode, BIT_ENGINE_RUN) ) ) { // si on doit injecter ou tous les tours au demmarrage
-    timeout_injection = TCNT5 + tick_injection; 
-    OCR5B = timeout_injection;            // compare match register 
-    TIMSK5 |= (1 << OCIE5B);  // enable timer compare interrupt
-    digitalWrite(pin_injection,HIGH);  // send output to logic level HIGH (5V)
-    OCR5C = timeout_injection;            // compare match register 
-    TIMSK5 |= (1 << OCIE5C);  // enable timer compare interrupt
-    digitalWrite(pin_injection2,HIGH);  // send output to logic level HIGH (5V)
-  }   
-#endif
+  #if ALTERNATESQUIRT == 0 // Si gestion des injecteurs simultanÃ©s
+    if ( (cylinder_injection[cylindre_en_cours - 1] == true)||(BIT_CHECK(running_mode, BIT_ENGINE_CRANK))|| !(BIT_CHECK(running_mode, BIT_ENGINE_RUN) ) ) { // si on doit injecter ou tous les tours au demmarrage
+      timeout_injection = TCNT5 + tick_injection; 
+      OCR5B = timeout_injection;            // compare match register 
+      TIMSK5 |= (1 << OCIE5B);  // enable timer compare interrupt
+      digitalWrite(pin_injection,HIGH);  // send output to logic level HIGH (5V)
+      OCR5C = timeout_injection;            // compare match register 
+      TIMSK5 |= (1 << OCIE5C);  // enable timer compare interrupt
+      digitalWrite(pin_injection2,HIGH);  // send output to logic level HIGH (5V)
+    }   
+  #endif
 
-#if ALTERNATESQUIRT == 1 // Si gestion des injecteurs alterné
-  if ( (cylinder_injection[cylindre_en_cours - 1] == true)||(BIT_CHECK(running_mode, BIT_ENGINE_CRANK))|| !(BIT_CHECK(running_mode, BIT_ENGINE_RUN) ) ) { // si on doit injecter ou tous les tours au demmarrage
-        timeout_injection = TCNT5 + tick_injection; 
-    OCR5B = timeout_injection;            // compare match register 
-    TIMSK5 |= (1 << OCIE5B);  // enable timer compare interrupt
-    digitalWrite(pin_injection,HIGH);  // send output to logic level HIGH (5V)
-  } 
-  if ( (cylinder_injection2[cylindre_en_cours - 1] == true)||(BIT_CHECK(running_mode, BIT_ENGINE_CRANK))|| !(BIT_CHECK(running_mode, BIT_ENGINE_RUN) ) ) { // si on doit injecter ou tous les tours au demmarrage
-    timeout_injection = TCNT5 + tick_injection; 
-    OCR5C = timeout_injection;            // compare match register 
-    TIMSK5 |= (1 << OCIE5C);  // enable timer compare interrupt
-    digitalWrite(pin_injection2,HIGH);  // send output to logic level HIGH (5V)
-  }  
-#endif
-
-#endif
-  }
+  #if ALTERNATESQUIRT == 1 // Si gestion des injecteurs alternÃ©
+    if ( (cylinder_injection[cylindre_en_cours - 1] == true)||(BIT_CHECK(running_mode, BIT_ENGINE_CRANK))|| !(BIT_CHECK(running_mode, BIT_ENGINE_RUN) ) ) { // si on doit injecter ou tous les tours au demmarrage
+      timeout_injection = TCNT5 + tick_injection; 
+      OCR5B = timeout_injection;            // compare match register 
+      TIMSK5 |= (1 << OCIE5B);  // enable timer compare interrupt
+      digitalWrite(pin_injection,HIGH);  // send output to logic level HIGH (5V)
+    } 
+    if ( (cylinder_injection2[cylindre_en_cours - 1] == true)||(BIT_CHECK(running_mode, BIT_ENGINE_CRANK))|| !(BIT_CHECK(running_mode, BIT_ENGINE_RUN) ) ) { // si on doit injecter ou tous les tours au demmarrage
+      timeout_injection = TCNT5 + tick_injection; 
+      OCR5C = timeout_injection;            // compare match register 
+      TIMSK5 |= (1 << OCIE5C);  // enable timer compare interrupt
+      digitalWrite(pin_injection2,HIGH);  // send output to logic level HIGH (5V)
+    }  
+  #endif // de altenate squirt
+ #endif // de injection used
+ }
 }
 
-
-
-ISR(TIMER5_COMPA_vect){ 
-//Timer 5 B pour arreter le SAW
+//Timer 5 A pour arreter le SAW
+#if SAW_WAIT == 0
+  ISR(TIMER5_COMPA_vect){ 
     digitalWrite(pin_ignition,LOW);
     digitalWrite(SAW_pin,LOW);    // on arrte le saw
- ignition_on = false;  
- } 
+    ignition_on = false;  
+  } 
+#endif
 
- ISR(TIMER5_COMPB_vect){ 
-//Timer 5 B pour arreter l injection
-    digitalWrite(pin_injection,LOW);    // on arrte l'injection
- } 
+#if SAW_WAIT == 1
+ISR(TIMER5_COMPA_vect){
+  if (ignition_mode == IGNITION_PENDING) { // on lance le SAW 
+    unsigned int timeout_ignition = TCNT5 + tick; 
+    OCR5A = timeout_ignition; 
+    TIMSK5 |= (1 << OCIE5A);  // enable timer compare interrupt
+    digitalWrite(SAW_pin,HIGH);  // send output to logic level HIGH (5V)
+    ignition_mode = IGNITION_RUNNING;
+    #if KNOCK_USED == 1
+      digitalWrite(pin_ignition,HIGH); // pour le knock 
+      ignition_on = true;
+    #endif 
+  }else{ // on arrete le SAW
+    digitalWrite(SAW_pin,LOW);    // on arrte le saw
+    #if KNOCK_USED == 1
+      digitalWrite(pin_ignition,LOW);  
+      ignition_on = false;  
+    #endif    
+  }
+} 
+#endif
 
-  ISR(TIMER5_COMPC_vect){ 
-//Timer 5 C pour arreter l injection
-    digitalWrite(pin_injection2,LOW);    // on arrte l'injection
- } 
+
+ISR(TIMER5_COMPB_vect){ //Timer 5 B pour arreter l injection
+  digitalWrite(pin_injection,LOW);    // on arrte l'injection
+} 
+
+ISR(TIMER5_COMPC_vect){ //Timer 5 C pour arreter l injection  
+  digitalWrite(pin_injection2,LOW);    // on arrte l'injection
+} 
    
 
  
+
