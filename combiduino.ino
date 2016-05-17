@@ -8,7 +8,10 @@
 #define ALTERNATESQUIRT 1 // 1 pour injecter a tour de role 0 pour injecter en meme temps
 #define TPS_USED 1 // 1 pour accel base sur TPS, 0 pour accel base sur KPA
 #define SAW_WAIT 1 // 1 pour retarde le SAW de 10 degrée apres le PIP, 0 mode normal
-const byte VERSION= 35;   //version du combiduino
+#define PID_IDLE_USED 1 // 1 utilise le PID au ralenti 0 utilise compensation simple
+#define CLT_USED 1 // 1 utilise la temperature moteur pour corriger l'injection 0 pas utilisé
+
+const byte VERSION= 45;   //version du combiduino
 //-------------------------------------------- Include Files --------------------------------------------//
 #include "variable.h"
 #include <avr/pgmspace.h>
@@ -16,6 +19,7 @@ const byte VERSION= 35;   //version du combiduino
 #include <SPI.h>
 #include <boards.h>
 #include <RBL_nRF8001.h>
+
 
 //--------------------------------------------Paramètre --------------------------------------------------//
 //------ injection 
@@ -25,28 +29,42 @@ const int after_start_nb_spark = 400; // enrichissement pendant x etincelle au d
 const byte enrichissement_after_start = 130 ; // % d'enrichissemnt a après démarrage 
 
 // phase normal
-unsigned int Req_Fuel_us = 10000 / nombre_inj_par_cycle;  // ouverture max des injecteurs 100% 
-const unsigned int injector_opening_time_us = 700; // temps d'ouverture de l'injecteur en us
-const byte lissage_kpa = 40 ;  // facteur lissage des KPA 100= pas de lissage 50 = fort lissage
+unsigned int Req_Fuel_us = 8000 / nombre_inj_par_cycle;  // ouverture max des injecteurs 100% 
+const unsigned int injector_opening_time_us = 800; // temps d'ouverture de l'injecteur en us
+byte lissage_kpa = 40 ;  // facteur lissage des KPA 100= pas de lissage 50 = fort lissage
+const byte lissage_kpa_idle = 40 ;  // facteur lissage des KPA au ralenti
+const byte lissage_kpa_running = 40 ;  // facteur lissage des KPA au regime normal
 
 // phase ralenti
 const int RPM_idle_max = 1100; // valeur RPM max pour déclencher le mode idle
-//const int MAP_idle_max = 45; // valeur MAP max pour déclencher le mode idle
-const int TPS_idle_max = 3; // valeur MAP max pour déclencher le mode idle
+const int MAP_idle_max = 45; // valeur MAP max pour déclencher le mode idle
+const int TPS_idle_max = 4; // valeur MAP max pour déclencher le mode idle
+
+boolean Idle_management = true; // gestion du ralenti controlé
+double RPM_idle_objectif = 950; // Objectif de ralenti
+
+#if PID_IDLE_USED==1
+#include "PID_v1.h"
+PID idlePID(  &idle_engine_rpm_average, &idle_advance, &RPM_idle_objectif, idleKp, idleKi, idleKd, DIRECT);
+#endif
+
+
 
 // phase acceleration
 int MAP_kpas[8] =        {-50,  0,   10,  30,  60,  120}; //valeur acceleration en kpa /s
-int MAP_acceleration[8] ={ 0 ,  0,   30,  50,   100,   200} ; //valeur enrichissement en % de reqfuel
-const byte accel_mini = 10; // TPS_dot mini pour declencher un calcul
-const int accel_every_spark = 20;  // correction possible tous les x etincelle
-const int tps_lu_min = 2; // valeur ADC mini lu 
-const int tps_lu_max = 500; // valeur ADC max lu
+byte MAP_acceleration[8] ={ 0 ,  0,   50,  70,   120,   200} ; //valeur enrichissement en % de reqfuel
+const byte accel_mini = 10; // TPS_dot mini pour declencher un calcul d'acceleration
+const int RPM_ACC_max = 2500; // RPM maxi pour gestion enrichissement accel
+
+const int accel_every_spark = 30;  // correction possible tous les x etincelle
+const int tps_lu_min = 17; // valeur ADC mini lu 
+const int tps_lu_max = 520; // valeur ADC max lu
 
 // correction par la lambda 
-int max_lambda_cor = 120; // correction maxi
-int min_lambda_cor = 80; // correction mini
-const byte Kp_pourcent = 10; // taux de correction lambda 0-> 100 facteur d'apprentissage
-
+byte max_lambda_cor = 120; // correction maxi
+byte min_lambda_cor = 80; // correction mini
+const byte Kp_pourcent = 30; // taux de correction lambda 0-> 100 facteur d'apprentissage
+boolean correction_lambda_used = false ; // correction lambda active ou non
 
 
 
@@ -77,7 +95,11 @@ void setup() {
   digitalWrite (MAP_pin, LOW );
   pinMode(TPS_pin, INPUT);
   digitalWrite (TPS_pin, LOW );
+  pinMode(CLT_pin, INPUT);
+  digitalWrite (CLT_pin, LOW );
   
+//init RPM
+initRPM();
   
   // port serie
   Serial.begin(115200); while (!Serial) {  }// wait for serial port to connect.  
@@ -112,6 +134,9 @@ void setup() {
   injection_initiale();
   initlog();
 
+#if PID_IDLE_USED==1  
+  InitPID();
+#endif
 }
 
 
@@ -124,26 +149,34 @@ if (time_loop - time_reception > interval_time_reception){checkdesordres();time_
 //chek des valeur de knock
        getknock();
 // calcul du nouvel angle d avance / injection si des valeurs ont changÃ©s
-  if (newvalue == true) {calcul_carto();newvalue = false;Megalog(); }
+  if (newvalue == true) {calcul_carto();newvalue = false; }
 // puis on gere les fonctions annexe a declencher periodiquement
-  // recalcul de la dÃ©pression
+ 
+// recalcul de la dÃ©pression
   if (time_loop - time_check_depression > interval_time_check_depression){gestiondepression();time_check_depression = time_loop;}
-  // recalcul du TPS
+// recalcul du TPS
   if (time_loop - time_check_TPS > interval_time_check_TPS){gestionTPS();time_check_TPS = time_loop;}
 
-  // recalcul de la lambda
+// recalcul du CLT
+  if (time_loop - time_check_CLT > interval_time_check_CLT){gestionCLT();time_check_CLT = time_loop;}
+
+// recalcul de la lambda
   if (time_loop - time_check_lambda > interval_time_check_lambda){lecturelambda();time_check_lambda = time_loop;}
 
-  // recalcul correction AFR
+// recalcul correction AFR
   if (time_loop - time_check_AFR > interval_time_check_AFR){AFR_self_learning();time_check_AFR = time_loop;}
   
-  // gestions sortie pour module exterieur ECU / EC1
+// gestions sortie pour module exterieur ECU / EC1
   if (time_loop - time_envoi > interval_time_envoi){gestionsortieECU();gestionsortieEC1();time_envoi = time_loop;}
 
 // gestions connection BLE
   if (time_loop - time_check_connect > interval_time_check_connect){checkBLE();time_check_connect = time_loop;}
+
 // check demarrage de la pompe fuel
   if (time_loop - time_check_fuel_pump > interval_time_check_fuel_pump){checkpump();time_check_fuel_pump = time_loop;}
+
+// gestions sortie pour megalog
+  if (time_loop - time_megalog > interval_time_megalog){Megalog();time_megalog = time_loop;}
 
   
 
@@ -181,8 +214,8 @@ void initpressure(){
  
 void initlog(){
 
-  sndlog("Time;reqfuel;ptRPM;ptKPA;RPM;Load;MAPdot;PhAccel;PWacc;PW;Gve;AFR;Gego;SparkAdv;TPS;TPSdot;idle;carto;ms" ); 
-  sndlog("ms;uS;pt;pt;tr/min;kpa;kpa/s;on/off;uS;uS;%;AFR;%;deg;%;%/s;on/off;nbr;on/off" ); 
+  sndlog("Time;CLT;IAE;mSpark;RPM;Load;MAPdot;PhAccel;PWacc;PW;Gve;AFR;Gego;SparkAdv;TPS;TPSdot;idle;carto;PIDadv" ); 
+  sndlog("ms;deg;%;on/off;tr/min;kpa;kpa/s;on/off;uS;uS;%;AFR;%;deg;%;%/s;on/off;nbr;deg" ); 
 
 }
 
@@ -191,9 +224,9 @@ String logsend = "";
 
 
   logsend = String( time_loop/ float(1000) )  + ';'
-   + Req_Fuel_us + ';'
- +  point_RPM + ';'
- +  point_KPA +  ';'
+   + CLT + ';'
+ +  IAE_actuel + ';'
+ +  multispark +  ';'
  +  engine_rpm_average +  ';' 
  +  map_pressure_kpa +  ';' 
  +  MAP_accel +  ';' 
@@ -208,36 +241,24 @@ String logsend = "";
  +  TPS_accel  + ';'
  +   bitRead(running_mode, BIT_ENGINE_IDLE )  + ';'
  +  carto_actuel  + ';'
- +  multispark
+ + PID_idle_advance
   ;
 
 sndlog(logsend);
 
+}
 
+void InitPID(){
+  idlePID.SetOutputLimits((double)(-Idle_maxoutput), (double)(Idle_maxoutput)); 
+  idlePID.SetTunings(idleKp, idleKi, idleKd); 
+  idlePID.SetSampleTime(300); // tous les 100 millis
+  idlePID.SetMode(MANUAL);
+}
 
-
-/*
-sndlog(
-
-  String(time_loop/ float(1000) ) + ";" 
- + String(Req_Fuel_us) + ";"
- + String(point_RPM) + ";"
- + String(point_KPA) + ";"
- + String(engine_rpm_average) + ";" 
- + String(map_pressure_kpa) + ";" 
- + String(MAP_accel) + ";" 
- + String( bitRead(running_mode, BIT_ENGINE_MAP ) ) + ";" 
- + String(PW_accel_actuel_us)  + ";"
- + String(injection_time_us) + ";" 
- + String(VE_actuel)  +";" 
- + String(AFR_actuel/ float(10) ) + ";" 
- + String(correction_lambda_actuel ) + ";"
- + String(Degree_Avance_calcul)  + ";"  
- + String(TPS_actuel)  + ";" 
- + String(TPS_accel)  
-
-
- );
-*/
-
+void initRPM(){
+  time_total=0;
+  for (int j = 0 ; j < maxpip_count; j++) { 
+    time_readings[j] = 65000;           //place current rpm value into current array element
+    time_total= time_total + time_readings[j]; //add the reading to the total     
+  }
 }
