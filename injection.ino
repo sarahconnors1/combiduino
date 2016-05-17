@@ -16,8 +16,10 @@ void calcul_injection(){
 #endif
 
 correction_lambda_actuel = correction_lambda();
-VE_actuel = VE_MAP(engine_rpm_average, map_pressure_kpa);
+VE_actuel = VE_MAP();
 int WAS_actuel = WAS();
+IAE_actuel = IAE();
+
 
   // le temps d'injection est :  temps d'ouverture injecteur + le max a pleine puissance (Req_Fuel) * VE de la map en % * Correction enrichissement en % * corection lambda en %
  
@@ -26,6 +28,7 @@ int WAS_actuel = WAS();
   * (map_pressure_kpa / float(100) )
   * (correction_lambda_actuel /float(100)  )
   * (WAS_actuel / float(100)  )
+   * (IAE_actuel / float(100)  )
   ;
 
 tick_injection  = ( injection_time_us  + injector_opening_time_us + PW_accel_actuel_us )* prescalertimer5 ;
@@ -43,57 +46,39 @@ if (nbr_spark < after_start_nb_spark ){ // on corrige tous les x tour
 }
 }
 
+//--------------------------------------------------------
+// Enrichissemnt suivant la temperatur moteur
+//--------------------------------------------------------
+int IAE(){
+int IAEtemp = 100;
+
+// pas de surenrichissement si afterstart en cours
+
+#if CLT_USED==1
+  if (CLT < IAElowtemp ) {return lowtemp_enrich;}
+  if (CLT > IAEhightemp ) {return hightemp_enrich;}
+  IAEtemp =  map(CLT ,IAElowtemp,IAEhightemp, lowtemp_enrich, hightemp_enrich);  // on converti la moyenne en % 
+#endif
+
+  return IAEtemp;
+}
 
 
 // ----------------------------------------------------------
 // recherche du coefficient VE a appliquer suivant la MAP
 // ----------------------------------------------------------
-float VE_MAP(int rpm, int pressure){
-  int map_rpm_index_low = point_RPM;                      // retrouve index RPM inferieur
-  int map_rpm_index_high = 0;
-  int map_pressure_index_low = point_KPA;       // retrouve index pression inferieur
-  int map_pressure_index_high = 0;
-  float VE_min = 0;
-  float VE_max = 0;
+float VE_MAP(){
   float VE = 0;
-   // calcul des valeurs des bin superieur
-  if ((rpm <= rpm_axis[nombre_point_RPM-1])|| (rpm <= rpm_axis[0]) ) { // si on est > a tour maxi ou si on est < a tour mini high = low
-    map_rpm_index_high = map_rpm_index_low;
-  } else{  
-    map_rpm_index_high = map_rpm_index_low + 1;
-  }
-  
-  if ((pressure <= pressure_axis[nombre_point_DEP-1]) || (pressure >= pressure_axis[0])) { // si on est > a kpa maxi ou si on est < a kpa mini high = low
-    map_pressure_index_high = map_pressure_index_low;
-  } else{  
-    map_pressure_index_high = map_pressure_index_low + 1;
-  }  
-  // interpolation entre les 4 valeurs de la map
- //            lowRPM      highRPM
- // lowkpa      A              B        VE_min = interpolation A et B
- // highjpa     C              D        VE_max = interpolation C et D
+  //                              rpm_percent_low   rpm_percent_high
+ //                                 lowRPM             highRPM
+ //  kpa_percent_high    highkpa      C                  D       
+ //  kpa_percent_low     lowkpa       A                  B       
  
- // d'abord VE versus RPM
- if (map_rpm_index_low != map_rpm_index_high){ // si < x tour/min ou > y tour/min -> si on est dans la MAP
- VE_min = mapfloat(rpm,
- rpm_axis[map_rpm_index_low],rpm_axis[map_rpm_index_high],
- fuel_map [map_pressure_index_low] [map_rpm_index_low],fuel_map [map_pressure_index_low] [map_rpm_index_high]);
-  VE_max = mapfloat(rpm,
- rpm_axis[map_rpm_index_low],rpm_axis[map_rpm_index_high],
- fuel_map [map_pressure_index_high] [map_rpm_index_low],fuel_map [map_pressure_index_high] [map_rpm_index_high]);
- }else{
-   VE_min = fuel_map [map_pressure_index_low] [map_rpm_index_low];
-   VE_max = fuel_map [map_pressure_index_high] [map_rpm_index_low];
- }
- 
- // puis entre VE_min / max et kpa
-  if (map_pressure_index_low != map_pressure_index_high){
-  VE = mapfloat(pressure
-  ,pressure_axis[map_pressure_index_low],pressure_axis[map_pressure_index_high],
-  VE_min,VE_max);
-  }else{
-    VE = VE_min;
-  }  
+VE = binC * fuel_map [pressure_index_high] [rpm_index_low] / float(100)
+   + binD * fuel_map [pressure_index_high] [rpm_index_high] / float(100)
+   + binA * fuel_map [pressure_index_low] [rpm_index_low] / float(100)
+   + binB * fuel_map [pressure_index_low] [rpm_index_high] / float(100)
+   ;
 return VE;
 }
 
@@ -110,7 +95,7 @@ int MAP_ACCEL(int BASE_accel){
  byte bin = 0;
  byte bin1 = 0;
  int acc_ = 0;
-if ( engine_rpm_average >RPM_ACC_max){ // pas d'acceleration si > a un certain regime
+if ( (engine_rpm_average >RPM_ACC_max) or ( !BIT_CHECK(running_mode,BIT_ENGINE_RUN) )) { // pas d'acceleration si > a un certain regime ou arrete
   return 0;
 }else{
 
@@ -160,77 +145,6 @@ if ( (nbr_spark < last_accel_spark + accel_every_spark) and ( BIT_CHECK(running_
 }
 }
 
-//-----------------------------------------------------------
-//           Gestion de la sonde lambda
-//-----------------------------------------------------------
-
-// gestion de la lecture de la lambda
-void lecturelambda(){
- int afr_lu = 0;
-
-
-#if LAMBDATYPE == 2 // narrowband
- int point_afr = 0;
- analogReference(INTERNAL1V1);
- afr_lu = analogRead(pin_lambda);   
- analogReference(DEFAULT);
-#endif
-
-#if LAMBDATYPE == 1 //wideband
- afr_lu = analogRead(pin_lambda);
-#endif
-
-sum_lambda += afr_lu;
-count_lambda++;
-
-
-if (count_lambda >= nbre_mesure_lambda){
-  afr_lu = sum_lambda / count_lambda;
-  count_lambda = sum_lambda = 0;
-
-#if LAMBDATYPE == 2 // narrowband 
-  if (afr_lu > AFR_analogique[AFR_bin_max -1]) { // borne maxi  
-     AFR_actuel = AFR[AFR_bin_max -1];
-  }  else if (afr_lu <AFR_analogique[0]){ // borne mini
-     AFR_actuel = AFR[0];
-  } else {
-    point_afr = decode_afr(afr_lu);
-    AFR_actuel = map(afr_lu,AFR_analogique[point_afr],AFR_analogique[point_afr + 1],AFR[point_afr],AFR[point_afr + 1]) ; // on fait une interpolation
-  }
-#endif
-
-#if LAMBDATYPE == 1 //wideband
- AFR_actuel = map(afr_lu,0,1020,90,190) ; // on fait une interpolation lineaire
-#endif
-
-}
-
-
-
-
-
-
-} 
-
-
- // Renvoi le bin AFR (0 -> 8)
-int decode_afr(int afr_) {
-  int map_afr = 0;
-   if(afr_ <AFR_analogique[0]){                // check si on est dans les limites haute/basse
-     map_afr = 0;
-   } else { 
-     if(afr_ >=AFR_analogique[AFR_bin_max -1]) {      // 
-       map_afr = AFR_bin_max - 1;      
-     }else{
-       // retrouve la valeur inferieur 
-       while(afr_ > AFR_analogique[map_afr]){map_afr++;} // du while
-       if (map_afr > 0){map_afr--;}
-     }
-    return map_afr;
-  }
-  return map_afr;
-}
-
 
 void injection_initiale(){
   // ouverture initiale pour purger les injecteurs
@@ -254,8 +168,10 @@ void checkpump(){
 // ----------------------------------------------------------
 // recherche du coefficient  a appliquer suivant la valeur LAMBDA
 // ----------------------------------------------------------
-int correction_lambda(){
-  if (  (correction_lambda_used == true ) and (!BIT_CHECK(running_mode,BIT_ENGINE_MAP)  )  and (!BIT_CHECK(running_mode,BIT_ENGINE_IDLE ) )  ) { //correction lambda et pas d'acceleration en cours et pas au ralenti 
+byte correction_lambda(){
+// ralenti  if (  (correction_lambda_used == true ) and (!BIT_CHECK(running_mode,BIT_ENGINE_MAP)  )  and (!BIT_CHECK(running_mode,BIT_ENGINE_IDLE ) )  ) { //correction lambda et pas d'acceleration en cours et pas au ralenti 
+  if (  (correction_lambda_used == true ) and (!BIT_CHECK(running_mode,BIT_ENGINE_MAP)  )    ) { //correction lambda et pas d'acceleration en cours et pas au ralenti 
+
     return Ego_map[point_KPA][point_RPM]; // correction historique
   }else{
     return 100;
@@ -263,7 +179,7 @@ int correction_lambda(){
 }
 
 //----------------------------------------------------------------
-// Calcul de la valeur de correction lambda Ã  appliquer au passÃ©
+// Calcul de la valeur de correction lambda a  appliquer au passee
 //----------------------------------------------------------------
 void AFR_self_learning(){
   int delay_bin = 0; // nombre de bin dans le passÃ©
@@ -280,14 +196,34 @@ void AFR_self_learning(){
 AFR_log_bin_actuel++;
 if (AFR_log_bin_actuel >= AFR_log_maxbin) {AFR_log_bin_actuel = 0;}
 
-if (  (correction_lambda_used == true ) and (!BIT_CHECK(running_mode,BIT_ENGINE_MAP)  )  and (!BIT_CHECK(running_mode,BIT_ENGINE_IDLE ) ) and (BIT_CHECK(running_mode,BIT_ENGINE_RUN ) )  ) { //correction lambda et pas d'acceleration en cours et pas au ralenti
-  AFR_log_RPM[AFR_log_bin_actuel] = point_RPM;        
-  AFR_log_KPA[AFR_log_bin_actuel] = point_KPA;
+// en attente ralentiif (  (correction_lambda_used == true ) and (!BIT_CHECK(running_mode,BIT_ENGINE_MAP)  )  and (!BIT_CHECK(running_mode,BIT_ENGINE_IDLE ) ) and (BIT_CHECK(running_mode,BIT_ENGINE_RUN ) )  ) { //correction lambda et pas d'acceleration en cours et pas au ralenti
+
+if (  (correction_lambda_used == true ) and (!BIT_CHECK(running_mode,BIT_ENGINE_MAP)  )  and (BIT_CHECK(running_mode,BIT_ENGINE_RUN ) )  ) { //correction lambda et pas d'acceleration en cours et pas au ralenti
+
+
+  if (binA > 70){ //test representatif
+    AFR_log_RPM[AFR_log_bin_actuel] = point_RPM;        
+    AFR_log_KPA[AFR_log_bin_actuel] = point_KPA;
+  }else if (binB > 70){ //test representatif
+    AFR_log_RPM[AFR_log_bin_actuel] = rpm_index_high;        
+    AFR_log_KPA[AFR_log_bin_actuel] = pressure_index_low;
+  }else if (binC > 70){ //test representatif
+    AFR_log_RPM[AFR_log_bin_actuel] = rpm_index_low;        
+    AFR_log_KPA[AFR_log_bin_actuel] = pressure_index_high;
+  }else if (binD > 70){ //test representatif
+    AFR_log_RPM[AFR_log_bin_actuel] = rpm_index_high;        
+    AFR_log_KPA[AFR_log_bin_actuel] = pressure_index_high;  
+  } 
+  else{
+    AFR_log_RPM[AFR_log_bin_actuel] = 99;        
+    AFR_log_KPA[AFR_log_bin_actuel] = 99;
+  }
 }else{
   AFR_log_RPM[AFR_log_bin_actuel] = 99;        
   AFR_log_KPA[AFR_log_bin_actuel] = 99;
 }
 //Serial.println("ecriture pt RPM" + String(point_RPM) + " pt KPA " + String(point_KPA) + " indice " +  String(AFR_log_bin_actuel) + "|"); 
+
 // 2eme etape
 // on retrouve le point historique basÃ© sur les RPM actuels
 // si c'est reprÃ©sentatif (<>99) on cherche l'AFR objectif, on compare avec AFR actuel et on modifie le point de correction 
@@ -299,14 +235,23 @@ point_RPM_hist = AFR_log_RPM[delay_bin_number];
 point_KPA_hist = AFR_log_KPA[delay_bin_number];
 
 
-//Serial.println("decalage de " + String(delay_bin) + " bin number " + String(delay_bin_number) + " pt RPM hist " +  String(point_RPM_hist) + "|" +  String(point_KPA_hist) + "|");
 
 if (point_RPM_hist != 99){ // si point valide
   objectif = AFR_map[point_KPA_hist][point_RPM_hist]; // objectif de la carto AFR
   Ego = Ego_map[point_KPA_hist][point_RPM_hist]; // correction historique
     erreur = 100 - ( (objectif - AFR_actuel) * float(100)  / float(objectif) ) ;  // calcul de l'erreur en cours
    
-    correction = Ego - ((Ego - erreur) * float(Kp_pourcent)) / float(100);          // correction historique - (ecart historique/erreur actuel) * Kp%
+  //  correction = Ego - ((Ego - erreur) * float(Kp_pourcent)) / float(100);          // correction historique - (ecart historique/erreur actuel) * Kp%
+  correction = Ego - ((100 - erreur) * float(Kp_pourcent)) / float(100);          // correction historique - (ecart historique/erreur actuel) * Kp%
+Serial.print(" pt RPM hist " +  String(point_RPM_hist) + "|" +  String(point_KPA_hist) + "|" + "objectif" + String(objectif) );
+Serial.println("AFR act"  + String(AFR_actuel) + "erreur " + String(erreur) + " coor hist " + String(Ego) + " coorrec " + String(correction) );
+
+// pour gerer l'arrondi superieur si objectif < afr actuel (trop pauvre) 
+if (objectif < AFR_actuel){
+  correction = correction + 1;
+}
+
+
 //Serial.println("objectif AFR " + String(objectif) + "AFR actuel " + String(AFR_actuel) + " crr histor " + String(Ego) + " erreur " +  String(erreur) + "| new corr " +  String(correction) + "|");
     
     if (correction > max_lambda_cor){correction = max_lambda_cor;}
