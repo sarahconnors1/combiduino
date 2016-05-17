@@ -4,14 +4,11 @@
 
 
 void calcul_carto(){
-  // calcul de la position actuelle dans la carto
-  
- point_RPM = decode_rpm(engine_rpm_average);                      // retrouve index RPM
- point_KPA = decode_pressure(map_pressure_kpa);       // retrouve index pression
 
-gestionTPSMAPdot(); // calcul de l'acceleration kpa/s et tps %/s
-  
-  // check si le moteur tourne
+// Etat du moteur actuel 
+calculRPM();
+
+// check si le moteur tourne
 if ( (micros() - pip_old) > 100000){engine_rpm_average = 0;}
 
   // Check si en cours de dÃ©marrage 
@@ -21,6 +18,7 @@ if ( (engine_rpm_average < rev_mini) && (engine_rpm_average > 0) ) {
    cbi(running_mode,BIT_ENGINE_CRANK);
 }
 
+ // check si running ou cranking
 if (engine_rpm_average == 0){
   cbi(running_mode,BIT_ENGINE_RUN);
 }else{
@@ -28,31 +26,90 @@ if (engine_rpm_average == 0){
 }
 
 // mode idle 
-if ( (engine_rpm_average <= RPM_idle_max) and (engine_rpm_average > rev_mini) and (TPS_actuel <= TPS_idle_max) ){
+if ( (engine_rpm_average <= RPM_idle_max) and (engine_rpm_average > rev_mini) and (TPS_actuel <= TPS_idle_max) and (map_pressure_kpa <= MAP_idle_max) ){
   sbi(running_mode,BIT_ENGINE_IDLE); 
 }else{
   cbi(running_mode,BIT_ENGINE_IDLE);
+  #if PID_IDLE_USED==1 
+    idlePID.SetMode(MANUAL);
+  #endif
 }
 
 
-// recalcul des nouvelles valeur avance et injection
-    calculdelavance();
-    calcul_injection();
 
+// recalcul des nouvelles valeur avance et injection
+  // calcul de la position actuelle dans la carto
+ point_RPM = decode_rpm(engine_rpm_average);          // retrouve index RPM
+ point_KPA = decode_pressure(map_pressure_kpa);       // retrouve index pression
+ 
+ calculinterpolation(engine_rpm_average, map_pressure_kpa); // calcul pourcentage a appliquer par bin 
+ // fait lors du calcul TPS  gestionTPSMAPdot(); // calcul de l'acceleration kpa/s et tps %/s
+  
+ calculdelavance();
+ calcul_injection();
+
+
+}
+
+void calculinterpolation(int rpm, int pressure){
+  // interpolation entre les 4 valeurs de la map
+//                              rpm_percent_low   rpm_percent_high
+ //                                 lowRPM             highRPM
+ //  kpa_percent_high    highkpa      C                  D       
+ //  kpa_percent_low     lowkpa       A                  B       
+  byte rpm_percent_low = 0;                     
+  byte rpm_percent_high = 0;
+  byte kpa_percent_low = 0;                     
+  byte kpa_percent_high = 0;
+
+  
+   rpm_index_low = point_RPM;                      // retrouve index RPM inferieur
+   rpm_index_high = 0;
+   pressure_index_low = point_KPA;       // retrouve index pression inferieur
+   pressure_index_high = 0;
+  
+// calcul des valeurs des bin superieur et interpolation des RPM et des KPA
+  if ((rpm >= rpm_axis[nombre_point_RPM-1])|| (rpm <= rpm_axis[0]) ) { // si on est > a tour maxi ou si on est < a tour mini high = low
+      rpm_index_high = rpm_index_low;  
+      rpm_percent_low = 100;
+      rpm_percent_high = 0;
+    } else{ 
+      rpm_index_high = rpm_index_low + 1;    
+      rpm_percent_low = float((rpm_axis[rpm_index_high] - rpm) * 100. / (rpm_axis[rpm_index_high] - rpm_axis[rpm_index_low] ) ); // interpolation des RPM (low /high) pour obtenir un % e
+      rpm_percent_high = 100 - rpm_percent_low;
+    }
+  
+  if ((pressure <= pressure_axis[nombre_point_DEP-1]) || (pressure >= pressure_axis[0])) { // si on est > a kpa maxi ou si on est < a kpa mini high = low
+      pressure_index_high = pressure_index_low;
+      kpa_percent_low = 100;
+      kpa_percent_high = 0;
+    } else{
+      pressure_index_high = pressure_index_low - 1;   
+      kpa_percent_low = float ((pressure_axis[pressure_index_high] - pressure) * 100. / (pressure_axis[pressure_index_high] - pressure_axis[pressure_index_low] ) ); // interpolation des RPM (low /high) pour obtenir un % e
+      kpa_percent_high = 100 - kpa_percent_low;
+    }
+
+
+// calcul des valeurs des Bins adjacents
+binC = float(rpm_percent_low *  kpa_percent_high / 100. );
+binD = float(rpm_percent_high *  kpa_percent_high / 100. );
+binB = float(rpm_percent_high *  kpa_percent_low / 100. );
+binA = 100 - binC - binD - binB;
 
 }
 
 void calculdelavance(){
-// calcul du nombre de degrÃƒÂ© d'avance suivant la map
-// puis pour le saw du dÃƒÂ©lai en microseconds
+// calcul du nombre de degrees d'avance suivant la map
+// puis pour le saw du delai en microseconds
 // puis en tick du timer (1 tick = 0,5 us)
-  
-Degree_Avance_calcul = IGN_MAP(engine_rpm_average, map_pressure_kpa) + correction_degre ;  
+
+ PID_idle_advance = Idle_correction();
+Degree_Avance_calcul = IGN_MAP() + correction_degre + PID_idle_advance  ;  
 
 if (fixed == true){                                   
    map_value_us = 1536 - (25.6 * fixed_advance);
   }else{
-    if (multispark && engine_rpm_average <= 1200){    // If engine rpm below 1800 and multispark has been set, add 2048us to map_value_us
+    if (multispark && engine_rpm_average <= RPM_max_multispark){    // If engine rpm below 1800 and multispark has been set, add 2048us to map_value_us
         if (first_multispark ){map_value_us = msvalue;}else{map_value_us = (1536 - (25.6 * Degree_Avance_calcul))+msvalue; } // multispark 
     } else{ map_value_us = 1536 - (25.6 * Degree_Avance_calcul);}                           // Otherwise read from map
   }
@@ -60,186 +117,67 @@ if (fixed == true){
 
  tick = map_value_us * 2; // pour le timer  
 // calcul du delai nÃ©cessaire pour envoyer le SAW x degrÃ© aprÃ¨s le PIP
-delay_ignition =   ((60000000L /engine_rpm_average)* angle_delay_SAW /360L ) * 2 ; 
+delay_ignition =   ((60000000L /engine_rpm_average)* (angle_delay_SAW ) /360L ) * 2 ; 
 }
 
+
+//-------------------------------------------------------------------------
+// Recherche de la correction en degré a appliquer a l'avance pour maintenir un ralenti stable
+//-------------------------------------------------------------------------
+float Idle_correction(){
+if (!BIT_CHECK(running_mode,BIT_ENGINE_IDLE )||Idle_management == false )  { // si on est en mode normal on renvoie 0
+  return 0;
+}
+#if PID_IDLE_USED==0 
+byte bin = 0;
+int ecart = engine_rpm_average - RPM_idle_objectif; 
+// on recherche l'index de correction basé sur l'écart entre ralenti objectif et ralenti réel
+if ( ecart >= Idle_step[Idle_maxbin - 1] ) {
+  bin = Idle_maxbin - 1;
+} else if ( ecart <= Idle_step[0] ) {
+   bin = 0;
+} else {
+    while(ecart > Idle_step[bin]){bin++;} // du while
+    if (bin > 0){bin--;}
+}
+
+ return Idle_adv[bin];
+#endif
+
+#if PID_IDLE_USED==1
+ idlePID.SetMode(AUTOMATIC);
+ idle_engine_rpm_average = (double)(engine_rpm_average);
+ idlePID.Compute();
+ return idle_advance;
+#endif
+  
+}
 
 //--------------------------------------------------------------
 // Gestion de l'interpolation du degré d'avance suivant les points adjacent de la MAP 
 //--------------------------------------------------------------
-
-float IGN_MAP(int rpm, int pressure){
-
-
-  int map_rpm_index_low = point_RPM;                      // retrouve index RPM inferieur
-  int map_rpm_index_high = 0;
-  int map_pressure_index_low = point_KPA;       // retrouve index pression inferieur
-  int map_pressure_index_high = 0;
-  float IGN_min = 0;
-  float IGN_max = 0;
+float IGN_MAP(){
   float IGN = 10;
 
 #if VACUUMTYPE ==1 // prise sur collecteur   
-   // calcul des valeurs des bin superieur
-  if ((rpm <= rpm_axis[nombre_point_RPM-1])|| (rpm <= rpm_axis[0]) ) { // si on est > a tour maxi ou si on est < a tour mini high = low
-    map_rpm_index_high = map_rpm_index_low;
-  } else{  
-    map_rpm_index_high = map_rpm_index_low + 1;
-  }
-  
-  if ((pressure <= pressure_axis[nombre_point_DEP-1]) || (pressure >= pressure_axis[0])) { // si on est > a kpa maxi ou si on est < a kpa mini high = low
-    map_pressure_index_high = map_pressure_index_low;
-  } else{  
-    map_pressure_index_high = map_pressure_index_low + 1;
-  }  
-  // interpolation entre les 4 valeurs de la map
- //            lowRPM      highRPM
- // lowkpa      A              B        IGN_min = interpolation A et B
- // highjpa     C              D        IGN_max = interpolation C et D
-
- // d'abord VE versus RPM
- if (map_rpm_index_low != map_rpm_index_high){ // si < x tour/min ou > y tour/min -> si on est dans la MAP
-    IGN_min = mapfloat(rpm, rpm_axis[map_rpm_index_low],rpm_axis[map_rpm_index_high], ignition_map [map_pressure_index_low] [map_rpm_index_low],ignition_map [map_pressure_index_low] [map_rpm_index_high]);
-    IGN_max = mapfloat(rpm, rpm_axis[map_rpm_index_low],rpm_axis[map_rpm_index_high], ignition_map [map_pressure_index_high] [map_rpm_index_low],ignition_map [map_pressure_index_high] [map_rpm_index_high]);
- }else{
-    IGN_min = ignition_map [map_pressure_index_low] [map_rpm_index_low];
-    IGN_max = ignition_map [map_pressure_index_high] [map_rpm_index_low];
- }
- 
- // puis entre VE_min / max et kpa
-  if (map_pressure_index_low != map_pressure_index_high){
-  IGN = mapfloat(pressure ,pressure_axis[map_pressure_index_low],pressure_axis[map_pressure_index_high], IGN_min, IGN_max);
-  }else{
-    IGN = IGN_min;
-  } 
+IGN = binC * ignition_map [pressure_index_high] [rpm_index_low] / float(100)
+   + binD * ignition_map [pressure_index_high] [rpm_index_high] / float(100)
+   + binA * ignition_map [pressure_index_low] [rpm_index_low] / float(100)
+   + binB * ignition_map [pressure_index_low] [rpm_index_high] / float(100)
+   ;  
 #endif
 #if VACUUMTYPE == 2 // prise en amont papillon
  IGN = ignition_map[point_KPA][point_RPM]
 #endif
-
-
    
 return IGN;
 }
 
+// routine de calcul des RPM moyen basé sur les x dernier pip
 
-
-
-// gestion de la nouvelle dÃ©pression
-void gestiondepression(){
-sum_pressure += analogRead(MAP_pin);
-count_pressure++;
-if (count_pressure >= nbre_mesure_pressure){
-   int kpa_moyen = sum_pressure / count_pressure;  
-   int kpa = map(kpa_moyen,0,correction_pressure,kpa_0V,101);  // on converti la moyenne en KPA   
-   count_pressure = 0;
-   sum_pressure = 0;
-  // on normalise 
-  #if VACUUMTYPE == 2 // avant papillon
-    if (kpa < pressure_axis[0]){kpa = pressure_axis[0]; }
-  #endif
-  #if VACUUMTYPE == 1 // collecteur
-    if (kpa < pressure_axis[nombre_point_DEP-1]) {kpa = pressure_axis[nombre_point_DEP-1]; }
-  #endif
-   if (kpa != map_pressure_kpa ) {newvalue=true;}
-  // on lisse
-  kpa = map_pressure_kpa + ( (kpa - map_pressure_kpa) * lissage_kpa / float(100) );
-
-// nouvelle valeur   
-  map_pressure_kpa = kpa;
-  last_MAP_time = millis();
-
-}   
-   
-}  
-
-// calcul du nombre de KPA / TPS par seconde 
-void gestionTPSMAPdot(){
-
-// Pour TPS ///////////////////////////////
-  if ( (last_TPS_time - previous_TPS_time) > 0 ){
-    TPS_accel = (TPS_actuel - previous_TPS) * float(1000)/ (last_TPS_time - previous_TPS_time) ; // calcul en %/S
-  }else{
-    TPS_accel = TPS_accel; // si pas de nouvel valeur
-  }   
-  if (TPS_accel < -50 ){TPS_accel = -50;} // sanity check
-  previous_TPS =  TPS_actuel;
-  previous_TPS_time = last_TPS_time;
-
-// pour KPA ///////////////////
-  if ( (last_MAP_time - previous_MAP_time) > 0 ){
-      MAP_accel = (map_pressure_kpa - previous_map_pressure_kpa) * float(1000) / (last_MAP_time - previous_MAP_time) ; // calcul en %/S
-  }else{
-      MAP_accel = MAP_accel; // si pas de nouvel valeur
-  }   
-  if (MAP_accel < -50 ){MAP_accel = -50;} // sanity check
-
-  previous_map_pressure_kpa =  map_pressure_kpa;
-  previous_MAP_time = last_MAP_time;
+void calculRPM(){
+  engine_rpm_average = (30000000 * maxpip_count) / (time_total ); 
 }
-
-void gestionTPS(){
-  sum_TPS += analogRead(TPS_pin);
-  count_TPS++;
-// debug(String(analogRead(TPS_pin)));
- if (count_TPS >= nbre_mesure_TPS){
-   int TPS_moyen = sum_TPS / count_TPS;  
-   int TPS = map(TPS_moyen,tps_lu_min,tps_lu_max,0,100);  // on converti la moyenne en %  
-   count_TPS = 0;
-   sum_TPS = 0;
-   if (TPS != TPS_actuel ) {newvalue=true;}
-   TPS_actuel = TPS;
-   last_TPS_time = millis();
- }
-}
-
-//-------------------------------------------- retrouve l'index du tableau pour les RPM --------------------------------------------// 
-int decode_rpm(int rpm_) { // renvoi la valeur infÃ©rieur du bin
-  int map_rpm = 0;
-   if(rpm_ <rpm_axis[0]){                // check si on est dans les limites haute/basse
-     map_rpm = 0;
-   } else { 
-     if(rpm_ >=rpm_axis[nombre_point_RPM - 1]) {      // 
-       map_rpm = nombre_point_RPM - 1;      
-     }else{
-       // retrouve la valeur inferieur 
-       while(rpm_ > rpm_axis[map_rpm]){map_rpm++;} // du while
-       if (map_rpm > 0){map_rpm--;}
-     }
-   }
-  return map_rpm;
-}
-//--------------------------------------------retrouve l index du tableau de la pression --------------------------------------------//
-#if VACUUMTYPE == 2
-int decode_pressure(int pressure_) { // renvoi la valeur infÃ©rieur du bin
-   int map_pressure = 0;
-   if(pressure_ < pressure_axis[0]){
-     map_pressure = 0;
-   }else if (pressure_ > pressure_axis[nombre_point_DEP -1]) {
-     map_pressure = nombre_point_DEP -1 ;
-   }else{
-     // retrouve la valeur inferieur 
-     while(pressure_ > pressure_axis[map_pressure]){map_pressure++;}
-     if (map_pressure > 0){map_pressure--;}
-   }
-   return map_pressure;
-}
-#endif
-
-#if VACUUMTYPE == 1
-int decode_pressure(int pressure_) { // renvoi la valeur infÃ©rieur du bin
-   int map_pressure = 0;
-   if(pressure_ > pressure_axis[0]){
-     map_pressure = 0;
-   }else if (pressure_ < pressure_axis[nombre_point_DEP -1]) {
-     map_pressure = nombre_point_DEP -1 ;
-   }else{
-     // retrouve la valeur inferieur 
-     while(pressure_ < pressure_axis[map_pressure]){map_pressure++;}
-   }
-   return map_pressure;
-}
-#endif
 
 
 //-------------------------------------------- Function to generate SAW signal to return to EDIS --------------------------------------------//
@@ -248,7 +186,19 @@ void pip_interupt()  {
   unsigned int timeout_injection = 0;
   
  //gestion plus simple des rpm moyens
-if ((digitalRead(interrupt_X) == LOW) and ( (micros() - pip_old) > debounce ) ) {   
+ unsigned long delai = micros() - pip_old ; // ecart avec le précedent pip   
+if ((digitalRead(interrupt_X) == LOW) and ( delai > debounce ) ) {   
+    pip_old = micros();
+    if (delai > 65000){delai = 65000;} // pour eviter overflow
+
+    time_total= time_total - time_readings[pip_count]; //subtract the previous reading in current array element from the total reading      //set time of current reading as the new time of the previous reading
+    time_readings[pip_count] = delai;           //place current rpm value into current array element
+    time_total= time_total + time_readings[pip_count]; //add the reading to the total     
+    pip_count++;nbr_spark++;
+    if (pip_count >= maxpip_count) {pip_count = 0;newvalue=true;}
+    
+  /*  
+   if ((digitalRead(interrupt_X) == LOW) and ( (micros() - pip_old) > debounce ) ) {   
     pip_old = micros();pip_count++;nbr_spark++;
     if (pip_count >= maxpip_count) {
         engine_rpm_average = (30000000 * maxpip_count) / (micros() - timeold ); 
@@ -256,6 +206,7 @@ if ((digitalRead(interrupt_X) == LOW) and ( (micros() - pip_old) > debounce ) ) 
         newvalue=true;
         timeold = micros();
     }
+  */
   
   if (first_multispark ){
     first_multispark = false; 
