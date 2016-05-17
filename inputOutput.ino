@@ -29,7 +29,7 @@ void checkdesordres(){
    else if (inputString == "ms on") {
          debug("Multispark Enabled");
          multispark = true;
-         first_multispark = true;
+       //  first_multispark = true;
    }
    else if (inputString == "ms off") {
          debug("Multispark Disabled");
@@ -170,6 +170,14 @@ void checkdesordres(){
     else if (inputString.equals("ego p") ) {//imprime les corrections actuels 
       printego_ram();
       debug("print ego");
+    }
+    else if (inputString.equals("idle on") ) {//imprime les corrections actuels 
+      Idle_management = true;
+      debug("idle on");
+    }
+    else if (inputString.equals("idle off") ) {//imprime les corrections actuels 
+      Idle_management = false;
+      debug("idle off");
     }
     // RAZ c est traite 
      inputString = "";
@@ -463,7 +471,7 @@ if (output == true){
   // parm 2 depression actuel
   // parm 3 degre actuel
  // ECU;9999;100;032 // RPM KPA Degre
-   SortieBT = "ECU;" + String(engine_rpm_average) + ";" + String(map_pressure_kpa) + ";"+ String(Degree_Avance_calcul) ; 
+   SortieBT = "ECU;" + String(engine_rpm_average) + ";" + String((int)(map_pressure_kpa)) + ";"+ String((int)(Degree_Avance_calcul )) ; 
    Send_to_BT(SortieBT); 
   }
  
@@ -480,7 +488,7 @@ if (output == true){
   // parm 3 libre knock KNOCK MOYEN
   // parm 4 libre knock DIFFERENCE actuel - Moyen
  // var1=map_value_us;
-var1 = correction_lambda_actuel;
+var1 = TPS_actuel;
 var2 = AFR_actuel;
 //var2 = acceleration_actuel;
    SortieBT = "EC1;" + String(carto_actuel) + ";" + String(correction_degre) +";"+String(var1)+";" + String(var2) ; 
