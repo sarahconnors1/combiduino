@@ -174,7 +174,6 @@ return IGN;
 }
 
 // routine de calcul des RPM moyen basé sur les x dernier pip
-
 void calculRPM(){
   engine_rpm_average = (30000000 * maxpip_count) / (time_total ); 
 }
@@ -197,21 +196,11 @@ if ((digitalRead(interrupt_X) == LOW) and ( delai > debounce ) ) {
     pip_count++;nbr_spark++;
     if (pip_count >= maxpip_count) {pip_count = 0;newvalue=true;}
     
-  /*  
-   if ((digitalRead(interrupt_X) == LOW) and ( (micros() - pip_old) > debounce ) ) {   
-    pip_old = micros();pip_count++;nbr_spark++;
-    if (pip_count >= maxpip_count) {
-        engine_rpm_average = (30000000 * maxpip_count) / (micros() - timeold ); 
-        pip_count = 0;
-        newvalue=true;
-        timeold = micros();
-    }
-  */
+
   
   if (first_multispark ){
     first_multispark = false; 
   }
-
 
 
 //---------------------
@@ -220,44 +209,17 @@ if ((digitalRead(interrupt_X) == LOW) and ( delai > debounce ) ) {
 //timer 5B / 5C pour injection 
 //---------------------
 
-#if SAW_WAIT== 0   
-unsigned int timeout_ignition = TCNT5 + tick; 
-  OCR5A = timeout_ignition; 
-  TIMSK5 |= (1 << OCIE5A);  // enable timer compare interrupt
-   // on envoie le SAW
-  digitalWrite(SAW_pin,HIGH);  // send output to logic level HIGH (5V)
-  #if KNOCK_USED == 1
-    digitalWrite(pin_ignition,HIGH); // pour le knock 
-    ignition_on = true;
-  #endif
-#endif
 
-#if SAW_WAIT== 1
 // on retarde le SAW de X microseconds
 unsigned int timeout_ignition = TCNT5 + delay_ignition; 
 OCR5A = timeout_ignition; 
 TIMSK5 |= (1 << OCIE5A);  // enable timer compare interrupt
 ignition_mode = IGNITION_PENDING;
-#endif
 
 #if INJECTION_USED == 1 
   // gestion dy cylindre en cours d'allumage
-  cylindre_en_cours++;
-  if (cylindre_en_cours>4){cylindre_en_cours=1;}
+  cylindre_en_cours++; if (cylindre_en_cours>4){cylindre_en_cours=1;}
 
-  #if ALTERNATESQUIRT == 0 // Si gestion des injecteurs simultanÃ©s
-    if ( (cylinder_injection[cylindre_en_cours - 1] == true)||(BIT_CHECK(running_mode, BIT_ENGINE_CRANK))|| !(BIT_CHECK(running_mode, BIT_ENGINE_RUN) ) ) { // si on doit injecter ou tous les tours au demmarrage
-      timeout_injection = TCNT5 + tick_injection; 
-      OCR5B = timeout_injection;            // compare match register 
-      TIMSK5 |= (1 << OCIE5B);  // enable timer compare interrupt
-      digitalWrite(pin_injection,HIGH);  // send output to logic level HIGH (5V)
-      OCR5C = timeout_injection;            // compare match register 
-      TIMSK5 |= (1 << OCIE5C);  // enable timer compare interrupt
-      digitalWrite(pin_injection2,HIGH);  // send output to logic level HIGH (5V)
-    }   
-  #endif
-
-  #if ALTERNATESQUIRT == 1 // Si gestion des injecteurs alternÃ©
     if ( (cylinder_injection[cylindre_en_cours - 1] == true)||(BIT_CHECK(running_mode, BIT_ENGINE_CRANK))|| !(BIT_CHECK(running_mode, BIT_ENGINE_RUN) ) ) { // si on doit injecter ou tous les tours au demmarrage
       timeout_injection = TCNT5 + tick_injection; 
       OCR5B = timeout_injection;            // compare match register 
@@ -270,21 +232,13 @@ ignition_mode = IGNITION_PENDING;
       TIMSK5 |= (1 << OCIE5C);  // enable timer compare interrupt
       digitalWrite(pin_injection2,HIGH);  // send output to logic level HIGH (5V)
     }  
-  #endif // de altenate squirt
  #endif // de injection used
  }
 }
 
+//------------------------------------
 //Timer 5 A pour arreter le SAW
-#if SAW_WAIT == 0
-  ISR(TIMER5_COMPA_vect){ 
-    digitalWrite(pin_ignition,LOW);
-    digitalWrite(SAW_pin,LOW);    // on arrte le saw
-    ignition_on = false;  
-  } 
-#endif
-
-#if SAW_WAIT == 1
+//------------------------------------
 ISR(TIMER5_COMPA_vect){
   if (ignition_mode == IGNITION_PENDING) { // on lance le SAW 
     unsigned int timeout_ignition = TCNT5 + tick; 
@@ -304,7 +258,6 @@ ISR(TIMER5_COMPA_vect){
     #endif    
   }
 } 
-#endif
 
 
 ISR(TIMER5_COMPB_vect){ //Timer 5 B pour arreter l injection
