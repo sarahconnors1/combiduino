@@ -4,7 +4,7 @@
 
 //-------------Check des donnÃƒÂ©e entrante par le port serie-----------------------------
 void checkdesordres(){
-  ble_do_events();
+ 
   Read_BT(); // lecture du BT
  
   if (stringComplete){   
