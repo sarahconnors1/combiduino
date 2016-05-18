@@ -37,13 +37,11 @@ byte running_mode = 0;
 //----------------------declaration pour injection 
 const byte nombre_inj_par_cycle = 2; // le nombre d'injection pour 1 cycle complet 2 tour
 const byte prescalertimer5 =2 ; //prescaler /8 a 16mhz donc 1us= 2 tick
-
-//unsigned int VE_actuel = 20; // VE du dernier calcul
 float VE_actuel = 20; // VE du dernier calcul
 
 volatile unsigned int tick_injection = 0; // pour le timer
 unsigned int injection_time_us = 0; // temps d'injection corrigé pour le timer
-volatile unsigned int cylindre_en_cours = 1; // cylindre en cours d'allumage
+volatile byte cylindre_en_cours = 1; // cylindre en cours d'allumage
 boolean cylinder_injection[4] = {true,false,true,false}; // numero de cylindre cylindre pour injection bank1
 boolean cylinder_injection2[4] = {false,true,false,true}; // numero de cylindre cylindre pour injection bank2
 
