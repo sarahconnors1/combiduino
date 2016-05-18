@@ -1,11 +1,11 @@
 #pragma GCC optimize ("-O3")
 
-#define INJECTION_USED  1  // 1 si OUI sinon 0
+#define BLUETOOTH_USED  1  // 1 si OUI sinon 0
+#define INJECTION_USED  1// 1 si OUI sinon 0
 #define LAMBDA_USED  1  // 1 si OUI sinon 0
 #define KNOCK_USED  0  // 1 si OUI sinon 0
 #define LAMBDATYPE 1  // 1= pour wideband 2= pour Narrow band
 #define VACUUMTYPE 1  // 1= pour prise depression colecteur 2= pour prise depression amont papillon 
-#define ALTERNATESQUIRT 1 // 1 pour injecter a tour de role 0 pour injecter en meme temps
 #define TPS_USED 1 // 1 pour accel base sur TPS, 0 pour accel base sur KPA
 #define SAW_WAIT 1 // 1 pour retarde le SAW de 10 degrée apres le PIP, 0 mode normal
 #define PID_IDLE_USED 1 // 1 utilise le PID au ralenti 0 utilise compensation simple
@@ -16,11 +16,17 @@ const byte VERSION= 45;   //version du combiduino
 #include "variable.h"
 #include <avr/pgmspace.h>
 #include <EEPROM.h>
-#include <SPI.h>
-#include <boards.h>
-#include <RBL_nRF8001.h>
 
 
+#if BLUETOOTH_USED == 1  
+  #include <SPI.h>
+  #include <boards.h>
+  #include <RBL_nRF8001.h>
+#endif
+
+#if PID_IDLE_USED==1
+  #include "PID_v1.h"
+#endif
 //--------------------------------------------Paramètre --------------------------------------------------//
 //------ injection 
 // phase demarrage
@@ -40,12 +46,11 @@ const int RPM_idle_max = 1100; // valeur RPM max pour déclencher le mode idle
 const int MAP_idle_max = 45; // valeur MAP max pour déclencher le mode idle
 const int TPS_idle_max = 4; // valeur MAP max pour déclencher le mode idle
 
-boolean Idle_management = true; // gestion du ralenti controlé
+boolean Idle_management = true; // gestion du ralenti controlé par PID
 double RPM_idle_objectif = 950; // Objectif de ralenti
 
 #if PID_IDLE_USED==1
-#include "PID_v1.h"
-PID idlePID(  &idle_engine_rpm_average, &idle_advance, &RPM_idle_objectif, idleKp, idleKi, idleKd, DIRECT);
+  PID idlePID(  &idle_engine_rpm_average, &idle_advance, &RPM_idle_objectif, idleKp, idleKi, idleKd, DIRECT);
 #endif
 
 
@@ -122,8 +127,9 @@ initRPM();
  #endif 
 
 // Initialisationdu BT
+#if BLUETOOTH_USED == 1  
  ble_set_name(BT_name); debug ("ready!");ble_begin();  
-
+#endif
 //init des capteurs
 
  inittimer(); // init des interruption Timer 5
@@ -213,15 +219,12 @@ void initpressure(){
 }
  
 void initlog(){
-
   sndlog("Time;CLT;IAE;mSpark;RPM;Load;MAPdot;PhAccel;PWacc;PW;Gve;AFR;Gego;SparkAdv;TPS;TPSdot;idle;carto;PIDadv" ); 
   sndlog("ms;deg;%;on/off;tr/min;kpa;kpa/s;on/off;uS;uS;%;AFR;%;deg;%;%/s;on/off;nbr;deg" ); 
-
 }
 
 void Megalog(){
 String logsend = "";
-
 
   logsend = String( time_loop/ float(1000) )  + ';'
    + CLT + ';'
@@ -249,10 +252,12 @@ sndlog(logsend);
 }
 
 void InitPID(){
+#if PID_IDLE_USED==1
   idlePID.SetOutputLimits((double)(-Idle_maxoutput), (double)(Idle_maxoutput)); 
   idlePID.SetTunings(idleKp, idleKi, idleKd); 
   idlePID.SetSampleTime(300); // tous les 100 millis
   idlePID.SetMode(MANUAL);
+#endif  
 }
 
 void initRPM(){
