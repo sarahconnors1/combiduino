@@ -254,6 +254,7 @@ void read_eeprom() {
          multispark = false;
        }else{
          multispark = true;  
+       //  first_multispark = true;
        }
   }
   
@@ -284,7 +285,6 @@ void read_eeprom() {
 
 
 }
-
 
 
 
