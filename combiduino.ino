@@ -7,7 +7,6 @@
 #define LAMBDATYPE 1  // 1= pour wideband 2= pour Narrow band
 #define VACUUMTYPE 1  // 1= pour prise depression colecteur 2= pour prise depression amont papillon 
 #define TPS_USED 1 // 1 pour accel base sur TPS, 0 pour accel base sur KPA
-#define SAW_WAIT 1 // 1 pour retarde le SAW de 10 degrée apres le PIP, 0 mode normal
 #define PID_IDLE_USED 1 // 1 utilise le PID au ralenti 0 utilise compensation simple
 #define CLT_USED 1 // 1 utilise la temperature moteur pour corriger l'injection 0 pas utilisé
 
