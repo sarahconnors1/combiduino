@@ -2,7 +2,7 @@
 //         UTILITAIRE
 //----------------------------------
 // gestion du mode debug avec renvoi vers la console
-void debug(String str){if (debugging == true){ Serial.println(str);} }
+void debug(String str){if (BIT_CHECK(running_option,BIT_DEBUG) ){ Serial.println(str);} }
 
 void sndlog(String str){ Serial.println(str);} 
 
@@ -20,6 +20,24 @@ String getValue(String data, char separator, int index){
     }
     return dataPart; //return text if this is the last part
 }
+
+//------------------------------------------------------------------------------------
+//                      Routine log du temps par routine
+//------------------------------------------------------------------------------------
+
+void deb(){
+#if LOG_PERF == 1 
+  temp=micros();
+# endif  
+}
+
+void fin(String s){
+#if LOG_PERF == 1 
+  Serial.println(s + ";" + String(micros() - temp)) ;
+# endif  
+}
+
+
 //-----------------------------------------------------------------------------------------------
 //                        ROUTINE EPROM
 //-----------------------------------------------------------------------------------------------
@@ -70,6 +88,7 @@ float mapfloat(float x, float in_min, float in_max, float out_min, float out_max
 // MESURE DEPRESSION
 //-------------------------------------
 void gestiondepression(){
+  
 sum_pressure += analogRead(MAP_pin);
 count_pressure++;
 if (count_pressure >= nbre_mesure_pressure){
@@ -84,16 +103,15 @@ if (count_pressure >= nbre_mesure_pressure){
   #if VACUUMTYPE == 1 // collecteur
     if (kpa < pressure_axis[nombre_point_DEP-1]) {kpa = pressure_axis[nombre_point_DEP-1]; }
   #endif
-   if (kpa != map_pressure_kpa ) {newvalue=true;}
+   if (kpa != map_pressure_kpa ) {sbi(running_option,BIT_NEW_VALUE);}
   // on lisse
   if (BIT_CHECK(running_mode,BIT_ENGINE_IDLE )){ // si on est en mode idle
-    lissage_kpa = lissage_kpa_idle;
+    kpa = map_pressure_kpa + ( (kpa - map_pressure_kpa) * lissage_kpa_idle / float(100) );
   }else{
-    lissage_kpa = lissage_kpa_running;
+    kpa = map_pressure_kpa + ( (kpa - map_pressure_kpa) * lissage_kpa_running / float(100) );
   }
   
-  kpa = map_pressure_kpa + ( (kpa - map_pressure_kpa) * lissage_kpa / float(100) );
-
+  
 // nouvelle valeur   
   map_pressure_kpa = kpa;
   last_MAP_time = millis();
@@ -116,7 +134,7 @@ void gestionTPS(){
    int TPS = map(TPS_moyen,tps_lu_min,tps_lu_max,0,100);  // on converti la moyenne en %  
    count_TPS = 0;
    sum_TPS = 0;
-   if (TPS != TPS_actuel ) {newvalue=true;}
+   if (TPS != TPS_actuel ) {sbi(running_option,BIT_NEW_VALUE);}
 
    if ( abs(TPS - TPS_actuel) > TPS_ecart_representatif ){ // si ecart est representatif
    TPS_actuel = TPS;
@@ -186,7 +204,6 @@ count_lambda++;
 // calcul du nombre de KPA / TPS par seconde 
 //--------------------------------------------
 void gestionTPSMAPdot(){
-
 // Pour TPS ///////////////////////////////
   if ( (last_TPS_time - previous_TPS_time) > 0 ){
     TPS_accel = (TPS_actuel - previous_TPS) * float(1000)/ (last_TPS_time - previous_TPS_time) ; // calcul en %/S
@@ -285,4 +302,9 @@ int decode_afr(int afr_) {
 }
 #endif
 
+
+// routine de calcul des RPM moyen basé sur les x dernier pip
+void calculRPM(){
+  engine_rpm_average = (30000000 * maxpip_count) / (time_total ); 
+}
 

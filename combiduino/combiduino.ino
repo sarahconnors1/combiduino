@@ -9,8 +9,11 @@
 #define TPS_USED 1 // 1 pour accel base sur TPS, 0 pour accel base sur KPA
 #define PID_IDLE_USED 1 // 1 utilise le PID au ralenti 0 utilise compensation simple
 #define CLT_USED 1 // 1 utilise la temperature moteur pour corriger l'injection 0 pas utilisé
+#define DECEL_USED 1 // 1 utilise la coupure d'injection a la décélération 0 pas utilisé
+#define LOG_PERF 0 // 1 envoi une log du temps par routine 0 pas utilisé
+#define OLD_LOG_USED 1 // 1 envoi les log rapide mais moins compréhensible 0 envoi l'ancien format
 
-const byte VERSION= 46;   //version du combiduino
+const byte VERSION= 50;   //version du combiduino
 //-------------------------------------------- Include Files --------------------------------------------//
 #include "variable.h"
 #include <avr/pgmspace.h>
@@ -38,7 +41,6 @@ const byte enrichissement_after_start = 130 ; // % d'enrichissemnt a après dém
 unsigned int Req_Fuel_us = 5000 / nombre_inj_par_cycle;  // ouverture max des injecteurs 100% 
 
 const unsigned int injector_opening_time_us = 800; // temps d'ouverture de l'injecteur en us
-byte lissage_kpa = 40 ;  // facteur lissage des KPA 100= pas de lissage 50 = fort lissage
 const byte lissage_kpa_idle = 40 ;  // facteur lissage des KPA au ralenti
 const byte lissage_kpa_running = 40 ;  // facteur lissage des KPA au regime normal
 
@@ -55,23 +57,54 @@ double RPM_idle_objectif = 950; // Objectif de ralenti
 #endif
 
 
-
 // phase acceleration
-int MAP_kpas[8] =        {-50,  0,   10,  30,  60,  120}; //valeur acceleration en kpa /s
-byte MAP_acceleration[8] ={ 0 ,  0,   50,  70,   120,   200} ; //valeur enrichissement en % de reqfuel
-const byte accel_mini = 10; // TPS_dot mini pour declencher un calcul d'acceleration
+int MAP_kpas[8] =        {  0 ,  5,   10,  30,  60,  120}; //valeur acceleration en kpa /s
+byte MAP_acceleration[8] ={ 0 ,  0,   50,  70, 120,  200} ; //valeur enrichissement en % de reqfuel
+//const byte accel_mini = 8; // TPS_dot mini pour declencher un calcul d'acceleration
+const byte accel_mini = 200; // TPS_dot mini pour declencher un calcul d'acceleration
 const int RPM_ACC_max = 2500; // RPM maxi pour gestion enrichissement accel
+const int accel_every_spark = 50;  // correction possible tous les x etincelle
 
-const int accel_every_spark = 30;  // correction possible tous les x etincelle
-const int tps_lu_min = 17; // valeur ADC mini lu 
+// gestion TPS
 const int tps_lu_max = 520; // valeur ADC max lu
 
+//phase deceleration
+const int RPM_DEC_min = 1600; // coupure d'injection si supérieur a ce regime
+unsigned long time_decel = 0;
+const unsigned long interval_time_decel = 2000; // declenche la deceleration si decel depuis plus de X ms
+
+
 // correction par la lambda 
-byte max_lambda_cor = 130; // correction maxi
-byte min_lambda_cor = 70; // correction mini
-const byte seuil_pourcent = 50; // seuil de representativite du point actuel pour correction si ca depasse ce seuil
+byte max_lambda_cor = 110; // correction maxi
+byte min_lambda_cor = 90; // correction mini
+const byte seuil_pourcent = 60; // seuil de representativite du point actuel pour correction si ca depasse ce seuil
 const byte Kp_pourcent = 30; // taux de correction lambda 0-> 100 facteur d'apprentissage
 boolean correction_lambda_used = true ; // correction lambda active ou non
+const byte lambda_kpa_index_min = 11; // pas de correction lambda si superieur pour proteger le ralenti
+const byte lambda_rpm_index_min = 3; // pas de correction lambda si inferieur pour proteger le ralenti
+
+//----------------------- X- TAU ---------------------------------------
+
+// taux d'adherence en % en fonction de la depression
+const byte BAWC_min = 10; // au mini kpa pressure_axis[0]
+const byte BAWC_max = 60; // au maxi kpa pressure_axis[nombre_point_DEP-1]
+// taux evaporation en % en fonction de la depression
+const byte BSOC_min = 20; // au mini kpa pressure_axis[0]
+const byte BSOC_max = 60; // au maxi kpa pressure_axis[nombre_point_DEP-1]
+
+// facteur de correction d adherence en fonction RPM (100 = pas de correction)
+const byte AWN_min = 120; // au mini RPM rpm_axis[0]
+const byte AWN_max = 60; // au maxi RPM rpm_axis[nombre_point_RPM-1]
+// facteur de correction evaporation en fonction RPM (100 = pas de correction)
+const byte SON_min = 70; // au mini RPM rpm_axis[0]
+const byte SON_max = 110; // au maxi RPM rpm_axis[nombre_point_RPM-1]
+
+// facteur de correction d adherence en fonction TEMPERATURE (100 = pas de correction)
+const byte AWW_min = 100; // au mini CLT lowtemp
+const byte AWW_max = 100; // au maxi CLT hightemp
+// facteur de correction evaporation en fonction RPM (100 = pas de correction)
+const byte SOW_min = 100; // au mini CLT lowtemp
+const byte SOW_max = 100; // au maxi CLT hightemp
 
 
 
@@ -82,8 +115,6 @@ void setup() {
   // pour ne pas lancer de faux SAW
   detachInterrupt(1);
   detachInterrupt(0); // on desactive le pin 2
-
- initpressure();
   
 // declaration des Pin OUTPUT
   pinMode(SAW_pin, OUTPUT);                                                 
@@ -104,18 +135,26 @@ void setup() {
   digitalWrite (TPS_pin, LOW );
   pinMode(CLT_pin, INPUT);
   digitalWrite (CLT_pin, LOW );
-  
-//init RPM
-initRPM();
+
+// reduction temps echantillonage analog read
+#ifdef sbi
+    sbi(ADCSRA,ADPS2);
+    cbi(ADCSRA,ADPS1);
+    cbi(ADCSRA,ADPS0);
+#endif
+
+// initialisation des capteurs
+ initpressure();
+ initTPS(); 
+ initRPM();
   
   // port serie
   Serial.begin(115200); while (!Serial) {  }// wait for serial port to connect.  
  #if KNOCK_USED == 1  
    Serial1.begin(115200); while (!Serial1) { ; }// wait for serial port to connect. 
  #endif
- inputString.reserve(50);   //reserve 50 bytes for serial input - equates to 25 characters
- OutputString.reserve(50);
- 
+ inputString.reserve(25);   //reserve 50 bytes for serial input - equates to 25 characters
+ OutputString.reserve(25);
   time_loop = millis();
 
   // init des cartos si pas deja fait
@@ -145,6 +184,16 @@ initRPM();
 #if PID_IDLE_USED==1  
   InitPID();
 #endif
+
+
+// active le X-TAU
+sbi(running_option,BIT_XTAU_USED);
+
+// active le bluetooth
+sbi(running_option,BIT_OUTPUT_BT);
+
+// pas d'ego
+correction_lambda_used = true;
 }
 
 
@@ -157,34 +206,34 @@ if (time_loop - time_reception > interval_time_reception){checkdesordres();time_
 //chek des valeur de knock
        getknock();
 // calcul du nouvel angle d avance / injection si des valeurs ont changÃ©s
-  if (newvalue == true) {calcul_carto();newvalue = false; }
+  if (BIT_CHECK(running_option,BIT_NEW_VALUE)) {deb();calcul_carto();cbi(running_option,BIT_NEW_VALUE); fin("clc");}
 // puis on gere les fonctions annexe a declencher periodiquement
  
 // recalcul de la dÃ©pression
-  if (time_loop - time_check_depression > interval_time_check_depression){gestiondepression();time_check_depression = time_loop;}
+  if (time_loop - time_check_depression > interval_time_check_depression){deb();gestiondepression();time_check_depression = time_loop;fin("dep");}
 // recalcul du TPS
-  if (time_loop - time_check_TPS > interval_time_check_TPS){gestionTPS();time_check_TPS = time_loop;}
+  if (time_loop - time_check_TPS > interval_time_check_TPS){deb();gestionTPS();time_check_TPS = time_loop;fin("tps");}
 
 // recalcul du CLT
-  if (time_loop - time_check_CLT > interval_time_check_CLT){gestionCLT();time_check_CLT = time_loop;}
+  if (time_loop - time_check_CLT > interval_time_check_CLT){deb();gestionCLT();time_check_CLT = time_loop;fin("clt");}
 
 // recalcul de la lambda
-  if (time_loop - time_check_lambda > interval_time_check_lambda){lecturelambda();time_check_lambda = time_loop;}
+  if (time_loop - time_check_lambda > interval_time_check_lambda){deb();lecturelambda();time_check_lambda = time_loop;fin("lbd");}
 
 // recalcul correction AFR
-  if (time_loop - time_check_AFR > interval_time_check_AFR){AFR_self_learning();time_check_AFR = time_loop;}
+  if (time_loop - time_check_AFR > interval_time_check_AFR){deb();AFR_self_learning();time_check_AFR = time_loop;fin("afr");}
   
 // gestions sortie pour module exterieur ECU / EC1
-  if (time_loop - time_envoi > interval_time_envoi){gestionsortieECU();gestionsortieEC1();time_envoi = time_loop;}
+  if (time_loop - time_envoi > interval_time_envoi){deb();gestionsortieECU();gestionsortieEC1();time_envoi = time_loop;fin("bt1");}
 
 // gestions connection BLE
-  if (time_loop - time_check_connect > interval_time_check_connect){checkBLE();time_check_connect = time_loop;}
+  if (time_loop - time_check_connect > interval_time_check_connect){deb();checkBLE();time_check_connect = time_loop;fin("bt2");}
 
 // check demarrage de la pompe fuel
-  if (time_loop - time_check_fuel_pump > interval_time_check_fuel_pump){checkpump();time_check_fuel_pump = time_loop;}
+  if (time_loop - time_check_fuel_pump > interval_time_check_fuel_pump){deb();checkpump();time_check_fuel_pump = time_loop;fin("pmp");}
 
 // gestions sortie pour megalog
-  if (time_loop - time_megalog > interval_time_megalog){Megalog();time_megalog = time_loop;}
+  if (time_loop - time_megalog > interval_time_megalog){deb();Megalog();time_megalog = time_loop;fin("log");}
 
   
 
@@ -200,10 +249,19 @@ void serialEvent() {
 void initpressure(){
   correction_pressure = 0;
   // on initialise la pression atmospherique
-  for (int j = 0 ; j < 10; j++) { 
+  for (int j = 0 ; j < 5; j++) { 
     correction_pressure += analogRead(MAP_pin);
   }
- correction_pressure =  (correction_pressure / 10);
+ correction_pressure =  (correction_pressure / 5);
+}
+
+void initTPS(){
+  tps_lu_min = 0;
+  // on initialise la pression atmospherique
+  for (int j = 0 ; j < 5; j++) { 
+    tps_lu_min += analogRead(TPS_pin);
+  }
+ tps_lu_min =  (tps_lu_min / 5);
 }
 
  void inittimer(){
@@ -221,17 +279,19 @@ void initpressure(){
 }
  
 void initlog(){
-  sndlog("Time;CLT;IAE;mSpark;RPM;Load;MAPdot;PhAccel;PWacc;PW;Gve;AFR;Gego;SparkAdv;TPS;TPSdot;idle;carto;PIDadv" ); 
-  sndlog("ms;deg;%;on/off;tr/min;kpa;kpa/s;on/off;uS;uS;%;AFR;%;deg;%;%/s;on/off;nbr;deg" ); 
+  sndlog("Time;CLT;IAE;mSpark;RPM;Load;MAPdot;PhAccel;PWacc;PW;Gve;AFR;Gego;SparkAdv;TPS;TPSdot;idle;carto;PIDadv;Dec;PW_corr;Qteparoi;Xadher;Tau" ); 
+  sndlog("ms;deg;%;on/off;tr/min;kpa;kpa/s;on/off;uS;uS;%;AFR;%;deg;%;%/s;on/off;nbr;deg;%;uS;uS;%;%" ); 
 }
 
 void Megalog(){
-String logsend = "";
 
+
+# if OLD_LOG_USED == 1
+String logsend = "";
   logsend = String( time_loop/ float(1000) )  + ';'
-   + CLT + ';'
- +  IAE_actuel + ';'
- +  multispark +  ';'
+ +  CLT + ';'
+ + IAE_actuel + ';'
+ +  bitRead(running_option,BIT_MS) +  ';'
  +  engine_rpm_average +  ';' 
  +  map_pressure_kpa +  ';' 
  +  MAP_accel +  ';' 
@@ -246,10 +306,55 @@ String logsend = "";
  +  TPS_accel  + ';'
  +   bitRead(running_mode, BIT_ENGINE_IDLE )  + ';'
  +  carto_actuel  + ';'
- + PID_idle_advance
+ + PID_idle_advance  + ';'
+ + DEC_actuel  + ';'
+ + PW_actuel + ';'
+ + qte_paroi + ';' 
+ + X_adher + ';'
+ + Tau_evap + ';'
   ;
-
 sndlog(logsend);
+
+
+/* TEST RPM 
+logsend ="";
+for (int j = 0 ; j < maxpip_count; j++) { 
+    logsend = logsend + String(time_readings[j]) + ";" ;
+}
+sndlog(logsend);
+*/
+#endif
+
+# if OLD_LOG_USED == 0
+char buffer[100]; // make sure this is large enough for your string + 1 for NULL char
+
+sprintf(buffer, "%i;%i;%i;%i;%i;%i;%i;%i;%i;%i;%i;%i;%i;%i;%i;%i;%i;%i;%i;%i;" , 
+  (int)(time_loop/100)
+ , CLT 
+ , IAE_actuel 
+ ,  multispark 
+ ,  engine_rpm_average 
+ ,  (int) (map_pressure_kpa  *100) 
+ ,  MAP_accel 
+ ,   bitRead(running_mode, BIT_ENGINE_MAP )   
+ ,  PW_accel_actuel_us  
+ ,  injection_time_us  
+ ,  (int)VE_actuel  
+ ,  AFR_actuel   
+ ,  correction_lambda_actuel  
+ ,  (int)Degree_Avance_calcul    
+ ,  TPS_actuel  
+ ,  TPS_accel  
+ ,   bitRead(running_mode, BIT_ENGINE_IDLE )  
+ ,  carto_actuel  
+ , (int)PID_idle_advance  
+ , (int) DEC_actuel  
+
+
+
+);
+Serial.println(buffer);
+# endif
 
 }
 

@@ -27,12 +27,28 @@ const int CLT_pin = A2;            // CLT temperature huile
 byte running_mode = 0;
 #define BIT_ENGINE_RUN      0     // Engine running
 #define BIT_ENGINE_CRANK    1   // Engine cranking
-#define BIT_ENGINE_ASE      2    // after start enrichment (ASE)
-#define BIT_ENGINE_WARMUP   3  // Engine in warmup
+#define BIT_ENGINE_DCC_MAPdot  2    // in deceleration mode MAPdot <0
+#define BIT_ENGINE_WARMUP   3    // Engine in warmup
 #define BIT_ENGINE_ACC      4    // in TPS acceleration mode
-#define BIT_ENGINE_DCC      5    // in deceleration mode
+#define BIT_ENGINE_DCC      5    // in deceleration mode MAP < x
 #define BIT_ENGINE_MAP      6    // in MAP acceleration mode
-#define BIT_ENGINE_IDLE     7  // idle on
+#define BIT_ENGINE_IDLE     7    // idle on
+
+// gestion des differente option activable
+byte running_option = 0;
+#define BIT_MS   0     // multispark fait
+#define BIT_XTAU_USED   1   // X-TAU fait
+#define BIT_DEBUG       2    // DEBUG ON/OFF fait
+#define BIT_FIXED_ADV   3    // fixed advance fait
+#define BIT_OUTPUT_BT   4    // Output Bluetooth fait
+#define BIT_FIRST_MS    5    // first multispark fait
+#define BIT_NEW_VALUE   6    // new value temps de recalculer fait
+#define BIT_RIEN        7    // rien
+
+//sbi(running_option,BIT_NEW_VALUE);
+//cbi(running_option,BIT_NEW_VALUE);
+//BIT_CHECK(running_option,BIT_NEW_VALUE)
+
 
 //----------------------declaration pour injection 
 const byte nombre_inj_par_cycle = 2; // le nombre d'injection pour 1 cycle complet 2 tour
@@ -44,6 +60,16 @@ unsigned int injection_time_us = 0; // temps d'injection corrigé pour le timer
 volatile byte cylindre_en_cours = 1; // cylindre en cours d'allumage
 boolean cylinder_injection[4] = {true,false,true,false}; // numero de cylindre cylindre pour injection bank1
 boolean cylinder_injection2[4] = {false,true,false,true}; // numero de cylindre cylindre pour injection bank2
+int PW_actuel = 0; // temps d'ouverture complet des injecteurs (normal + accel) corrige par le Xtau ou pas
+
+//------------------declaration X-Tau
+byte Tau_evap = 40; // taux d evaporation au paroi
+byte X_adher = 40; // taux d adherence au paroi
+const float Xtau_max_decel = 1.3; // facteur pour limiter l appauvrissemnt en fin d accel du x tau 1.3 = 30%
+int  Tau_dt = 300; 
+int qte_paroi = 0;
+int qte_paroi_previous = 0;
+unsigned int PW_previous = 0;
 
 //----------------------declaration acceleration
 const int MAP_acc_max = 6; // nombre d'indice du tableua MAP_kpas
@@ -53,7 +79,7 @@ int saved_accel=0; // acceleration lors du declenchement de l'accel
 
 //----------------------declaration TPS
 const byte nbre_mesure_TPS = 5;
-const int TPS_check_per_S = 4 ; // nombre de calcul par seconde d'acceleration / depression
+const int TPS_check_per_S = 3 ; // nombre de calcul par seconde d'acceleration / depression
 int TPS_actuel = 0;
 int previous_TPS = 0;
 int TPS_accel = 0 ;  // TPS/s d'acceleration
@@ -62,6 +88,7 @@ byte count_TPS = 0;
 long last_TPS_time = 10; // dernier calcul du TPS
 long previous_TPS_time = 0; // avant dernier calcul TPS
 const byte TPS_ecart_representatif = 1; // ecart a ne pas prendre en compte car non représentatif
+int tps_lu_min = 0; // valeur ADC mini lu 
 
 //--------------------declaration pour la lambda
 const int AFR_bin_max = 9;
@@ -76,20 +103,18 @@ const byte nbre_mesure_lambda = 4;
 
 
 //--------------------declaration du debugging
-boolean debugging = true; // a mettre a falsdebuge pour ne pas debugger
 String debugstring = "";
 
 //--------------------declaration bluetooth
 char BT_name [10] = "Combi";
 String OutputString = "";
-boolean output = true;
 
 //--------------------Serial input initailisation
 String inputString = "";            // a string to hold incoming data
 boolean stringComplete = false;     // whether the string is complete
 
 //------------------- declaration pour l ECU
-const byte maxpip_count = 10;  //on fait la moyenne tout les x pip
+const byte maxpip_count = 20;  //on fait la moyenne tout les x pip
 const int nombre_point_RPM = 23; // nombre de point de la MAP
 const int nombre_point_DEP = 17; // nombre de point de la MAP
 const int nombre_carto_max = 5; // nombre de carto a stocker
@@ -113,16 +138,11 @@ unsigned int rev_limit = 4550;               // Max tour minute
 unsigned int rev_mini = 500; // min tour minute
 float Degree_Avance_calcul = 10;              // Degree_Avance_calculÃ© suivant la cartographie a 10 par defaut pour demmarragee
 
-boolean fixed = false;              // declare whether to use fixed advance values
-boolean multispark = true;         // multispark
-volatile boolean first_multispark = false;         // 1er allumage en multispark
 const int RPM_max_multispark = 1400; // multispark géré jusqy'a x rpm
 int correction_degre = 0; // correction de la MAP
 const int msvalue = 2040 ; // normaly 2048
 
 volatile unsigned int tick = 0; // nombre de tick du timer pour le saw
-volatile boolean newvalue = true;  // check si des nouvelles valeurs RPM/pression ont ete calculÃ©s
-//volatile unsigned long timeold = 0;
 volatile unsigned long pip_old = 0; // durée du dernier pip pour le debounce
 volatile byte pip_count = 0;
 volatile unsigned int engine_rpm_average = 0;  // Initial average engine rpm pour demarrage
@@ -130,7 +150,6 @@ byte carto_actuel = 1; //cartographie en cours
 volatile boolean ignition_on = false; // gere si le SAW est envoyé non terminé
 
 //rpm averaging array
-//const int num_rpm_readings = 10;               //size of rpm averaging array
 volatile unsigned int time_readings[maxpip_count]  ;   // array of rpm readings
 volatile unsigned long time_total = 0;          // the running rpm total
 
@@ -219,7 +238,9 @@ const int IAElowtemp = 20; //temperature en degre
 const byte lowtemp_enrich = 115; // coeff enirchissemnt a temperature low temp 
 const int IAEhightemp = 50; //temperature en degre
 const byte hightemp_enrich = 100; // coeff enirchissemnt a temperature high temp 
-// 
+
+//Deceleration
+byte DEC_actuel = 100; // % de coupure d'injection 
 
 
 // variable de loop

@@ -1,6 +1,6 @@
-//-------------------------------------------------------------
-//   ROUTINE DE CALCUL ECU                                      //
-//-------------------------------------------------------------
+//------------------------------------------------------------- //
+//   ROUTINE DE CALCUL PRINCIPAL ECU                            //
+//------------------------------------------------------------- //
 
 void calcul_carto(){
 
@@ -24,7 +24,7 @@ if (engine_rpm_average == 0){
   sbi(running_mode,BIT_ENGINE_RUN); 
 }
 
-// mode idle 
+// check du mode idle 
 if ( (engine_rpm_average <= RPM_idle_max) and (engine_rpm_average > rev_mini) and (TPS_actuel <= TPS_idle_max) and (map_pressure_kpa <= MAP_idle_max) ){
   sbi(running_mode,BIT_ENGINE_IDLE); 
 }else{
@@ -33,6 +33,24 @@ if ( (engine_rpm_average <= RPM_idle_max) and (engine_rpm_average > rev_mini) an
     idlePID.SetMode(MANUAL);
   #endif
 }
+
+// check de la deceleration 
+//complete
+if ( (engine_rpm_average > RPM_DEC_min) and (map_pressure_kpa <= pressure_axis[nombre_point_DEP-1] + 1 ) ){
+
+  if (time_decel == 0){
+    time_decel = time_loop;
+  }
+  if ( (time_loop - time_decel) > interval_time_decel ){
+     sbi(running_mode,BIT_ENGINE_DCC); 
+     qte_paroi = 0; // pour le xtau il n'y a plus rien sur la paroi
+  }
+
+} else {
+  cbi(running_mode,BIT_ENGINE_DCC);
+  time_decel = 0; 
+}
+
 
 // recalcul des nouvelles valeur avance et injection
 // calcul de la position actuelle dans la carto
@@ -43,6 +61,10 @@ if ( (engine_rpm_average <= RPM_idle_max) and (engine_rpm_average > rev_mini) an
  calcul_injection();
 }
 
+
+//-------------------------------------------------------------------------------
+//  Routine d interpolation dans la MAP
+//-------------------------------------------------------------------------------
 void calculinterpolation(int rpm, int pressure){
 // interpolation entre les 4 valeurs de la map
 //                              rpm_percent_low   rpm_percent_high
@@ -87,6 +109,10 @@ binB = float(rpm_percent_high *  kpa_percent_low / 100. );
 binA = 100 - binC - binD - binB;
 }
 
+
+//-------------------------------------------------------------------------
+//      Routine principal de calcul de l'avance
+//-------------------------------------------------------------------------
 void calculdelavance(){
 // calcul du nombre de degrees d'avance suivant la map
 // puis pour le saw du delai en microseconds
@@ -95,11 +121,11 @@ void calculdelavance(){
 PID_idle_advance = Idle_correction();
 Degree_Avance_calcul = IGN_MAP() + correction_degre + PID_idle_advance  ;  
 
-if (fixed == true){                                   
+if (BIT_CHECK(running_option,BIT_FIXED_ADV)){                                   
    map_value_us = 1536 - (25.6 * fixed_advance);
 }else{
-   if (multispark && engine_rpm_average <= RPM_max_multispark){    // If engine rpm below 1800 and multispark has been set, add 2048us to map_value_us
-        if (first_multispark ){map_value_us = msvalue;}else{map_value_us = (1536 - (25.6 * Degree_Avance_calcul))+msvalue; } // multispark 
+   if (BIT_CHECK(running_option,BIT_MS) && engine_rpm_average <= RPM_max_multispark){    // If engine rpm below 1800 and multispark has been set, add 2048us to map_value_us
+        if (BIT_CHECK(running_option,BIT_FIRST_MS) ){map_value_us = msvalue;}else{map_value_us = (1536 - (25.6 * Degree_Avance_calcul))+msvalue; } // multispark 
    } else{
         map_value_us = 1536 - (25.6 * Degree_Avance_calcul);  // Otherwise read from map
    }                          
@@ -112,9 +138,9 @@ if (map_value_us < 64){ map_value_us = 64; }    // If map_value_us is less than 
 delay_ignition =   ((60000000L /engine_rpm_average)* (angle_delay_SAW ) /360L ) * 2 ; 
 }
 
-//-------------------------------------------------------------------------
+//---------------------------------------------------------------------------------------------
 // Recherche de la correction en degré a appliquer a l'avance pour maintenir un ralenti stable
-//-------------------------------------------------------------------------
+//---------------------------------------------------------------------------------------------
 float Idle_correction(){
 if (!BIT_CHECK(running_mode,BIT_ENGINE_IDLE )||Idle_management == false )  { // si on est en mode normal on renvoie 0
   return 0;
@@ -163,10 +189,7 @@ IGN = binC * ignition_map [pressure_index_high] [rpm_index_low] / float(100)
 return IGN;
 }
 
-// routine de calcul des RPM moyen basé sur les x dernier pip
-void calculRPM(){
-  engine_rpm_average = (30000000 * maxpip_count) / (time_total ); 
-}
+
 
 
 //-------------------------------------------- Function to generate SAW signal to return to EDIS --------------------------------------------//
@@ -180,17 +203,19 @@ if ((digitalRead(interrupt_X) == LOW) and ( delai > debounce ) ) {
     pip_old = micros();
     if (delai > 65000){delai = 65000;} // pour eviter overflow
 
+ //   if (delai < time_readings[pip_count] /2 ){delai = time_readings[pip_count];} // pour eviter les sauts
+
     time_total= time_total - time_readings[pip_count]; //subtract the previous reading in current array element from the total reading      //set time of current reading as the new time of the previous reading
     time_readings[pip_count] = delai;           //place current rpm value into current array element
     time_total= time_total + time_readings[pip_count]; //add the reading to the total     
     pip_count++;nbr_spark++;
-    if (pip_count >= maxpip_count) {pip_count = 0;newvalue=true;}
+    if (pip_count >= maxpip_count) {pip_count = 0;sbi(running_option,BIT_NEW_VALUE);}
     
-
-  
-  if (first_multispark ){
-    first_multispark = false; 
+  if (BIT_CHECK(running_option,BIT_FIRST_MS) ){
+    cbi(running_option,BIT_FIRST_MS); 
   }
+
+
 
 
 //---------------------
@@ -209,6 +234,11 @@ ignition_mode = IGNITION_PENDING;
 #if INJECTION_USED == 1 
   // gestion dy cylindre en cours d'allumage
   cylindre_en_cours++; if (cylindre_en_cours>4){cylindre_en_cours=1;}
+
+  // gestion du XTAU
+  if (cylindre_en_cours == 1){
+      Calcul_qte_paroi();
+  }
 
     if ( (cylinder_injection[cylindre_en_cours - 1] == true)||(BIT_CHECK(running_mode, BIT_ENGINE_CRANK))|| !(BIT_CHECK(running_mode, BIT_ENGINE_RUN) ) ) { // si on doit injecter ou tous les tours au demmarrage
       timeout_injection = TCNT5 + tick_injection; 

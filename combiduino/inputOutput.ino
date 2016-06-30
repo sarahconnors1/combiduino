@@ -11,35 +11,35 @@ void checkdesordres(){
     inputString.trim(); 
   if(inputString == "fixed") {
         debug("Fixed Advance Selected");
-        fixed = true;
+        sbi(running_option,BIT_FIXED_ADV);
    }
    else if (inputString == "map") {
         debug("Ignition Advance Selected");
-        fixed = false;
+        cbi(running_option,BIT_FIXED_ADV);
    }
    else if (inputString == "dbg on") {
         debug("debug ON");
-        debugging = true;
+        sbi(running_option,BIT_DEBUG);
    }
    else if (inputString == "dbg off") {
         debug("debug OFF");
-        debugging = false;
+       cbi(running_option,BIT_DEBUG);
    }
    
    else if (inputString == "ms on") {
          debug("Multispark Enabled");
-         multispark = true;
+         sbi(running_option,BIT_MS);
        //  first_multispark = true;
    }
    else if (inputString == "ms off") {
          debug("Multispark Disabled");
-         multispark = false;
+         cbi(running_option,BIT_MS);
    }
    else if (inputString == "output on"){
-      output = true; 
+      sbi(running_option,BIT_OUTPUT_BT);
     }
     else if (inputString == "output off"){
-      output = false;
+      cbi(running_option,BIT_OUTPUT_BT);
    }
     else if (inputString == "plus"){
       correction_degre = correction_degre + 3;
@@ -212,7 +212,12 @@ void send_setting1_ecu(){
    }   
    if ( (debug.toInt() >= 0) and (debug.toInt() <= 1) ) {
      EEPROM.write(eprom_debug, debug.toInt()); // debug 
-     debugging = debug.toInt() == 0 ? false : true;
+
+     if (debug.toInt() == 0){
+      cbi(running_option,BIT_DEBUG);
+     }else{
+      sbi(running_option,BIT_DEBUG);
+     }
      
    }
    if (rpmmin.toInt() < 1000) {
@@ -248,7 +253,14 @@ void send_setting3_ecu(){
 // multispark
    if ( (ms.toInt() >= 0) || (ms.toInt() <= 1) ) {
      EEPROM.write(eprom_ms, ms.toInt()); // debug 
-     multispark = ms.toInt() == 0 ? false : true;
+    
+    if (ms.toInt() == 0){
+      cbi(running_option,BIT_MS);
+    }else{
+      sbi(running_option,BIT_MS);
+    }
+
+     
    }
 // correction avance   
    if (avance.toInt() < 25) {
@@ -460,13 +472,13 @@ void changement_point_carto(){
 void gestionsortieECU(){
 String SortieBT;
 // on envoie au port serie pour debug
-if (debugging == true && 1==2 ){
+if (BIT_CHECK(running_option,BIT_DEBUG) && 1==2 ){
 //if (debugging == true  ){
   debug("RPM :" +String(engine_rpm_average)+ " MAP :" + String(map_pressure_kpa) + " DEG :"+ String(Degree_Avance_calcul) + " MAP_US :"+String(map_value_us) ) ;
 }
 
 // on envoie au port BT
-if (output == true){
+if (BIT_CHECK(running_option,BIT_OUTPUT_BT)){
   // parm 1 RPM
   // parm 2 depression actuel
   // parm 3 degre actuel
@@ -482,7 +494,7 @@ String SortieBT;
 // on envoie au port serie pour debug
 
 // on envoie au port BT
-if (output == true){
+if (BIT_CHECK(running_option,BIT_OUTPUT_BT)){
   // parm 1 carto actuelle
   // parm 2 correction actuel
   // parm 3 libre knock KNOCK MOYEN
@@ -513,7 +525,7 @@ String txt="";
       }
     }
     txt = txt + "},";
-    debug(txt);
+    sndlog(txt);
   }
 }
 
