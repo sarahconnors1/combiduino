@@ -179,6 +179,9 @@ void checkdesordres(){
       Idle_management = false;
       debug("idle off");
     }
+     else if (inputString.equals("init log") ) {//imprime les corrections actuels 
+      initlog();
+    }
     // RAZ c est traite 
      inputString = "";
      stringComplete = false;

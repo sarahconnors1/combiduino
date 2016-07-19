@@ -193,7 +193,10 @@ count_lambda++;
 #endif
 
 #if LAMBDATYPE == 1 //wideband
-  AFR_actuel = map(afr_lu,0,1023,86,190) ; // on fait une interpolation lineaire
+  byte AFR_temp ;
+  
+  AFR_temp = map(afr_lu,0,1023,86,190) ; // on fait une interpolation lineaire
+  AFR_actuel = AFR_actuel + ( (AFR_temp - AFR_actuel) * lissage_AFR / float(100) );
 #endif
 
   }
@@ -306,5 +309,6 @@ int decode_afr(int afr_) {
 // routine de calcul des RPM moyen basé sur les x dernier pip
 void calculRPM(){
   engine_rpm_average = (30000000 * maxpip_count) / (time_total ); 
+  debouncePIP = time_total * debouncepercent / maxpip_count ;
 }
 

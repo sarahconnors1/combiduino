@@ -20,7 +20,7 @@ VE_actuel = VE_MAP();
 int WAS_actuel = WAS();
 IAE_actuel = IAE();
 DEC_actuel = Decel();
-
+AFR_objectif = AFR_map[point_KPA][point_RPM];
   // le temps d'injection est :  temps d'ouverture injecteur + le max a pleine puissance (Req_Fuel) * VE de la map en % * Correction enrichissement en % * corection lambda en %
  
    injection_time_us =  Req_Fuel_us  
@@ -346,8 +346,7 @@ void Calcul_qte_paroi(){
 // calcul la quantité restante sur la paroi (unite = PW pulse width)
 // cette routine doit être appelé à chaque cycle aka injection du cylindre 1
 // elle tient compte de l'ajout sur la paroi de la derniere injection ( injection carto + pompe de reprise) 
-
-
+if (recalcul_paroi == true){
 qte_paroi = qte_paroi_previous
  +  ( float(PW_previous/float(100) )  * X_adher )  
  - ( (qte_paroi_previous /Tau_dt) * float(100) );
@@ -357,26 +356,14 @@ qte_paroi = qte_paroi_previous
   }
   qte_paroi_previous = qte_paroi;
   PW_previous = PW_actuel; 
+  recalcul_paroi = false;
+}
+
 }
 
 
 
 void Calcul_variable_XTAU(){
-/*
-// taux d'adherence en % en fonction de la depression
-const BAWC_min = 10; // au mini kpa pressure_axis[0]
-const BAWC_max = 60; // au maxi kpa pressure_axis[nombre_point_DEP-1]
-// taux evaporation en % en fonction de la depression
-const BSOC_min = 20; // au mini kpa pressure_axis[0]
-const BSOC_max = 60; // au maxi kpa pressure_axis[nombre_point_DEP-1]
-
-// facteur de correction d adherence en fonction RPM (100 = pas de correction)
-const AWN_min = 150; // au mini RPM rpm_axis[0]
-const AWN_max = 80; // au maxi RPM rpm_axis[nombre_point_RPM-1]
-// facteur de correction evaporation en fonction RPM (100 = pas de correction)
-const SON_min = 70; // au mini RPM rpm_axis[0]
-const SON_max = 110; // au maxi RPM rpm_axis[nombre_point_RPM-1]
-*/
 byte BAWC = 0;
 byte BSOC = 0;
 byte AWN = 100;
@@ -406,17 +393,10 @@ SOW = map(CLT ,lowtemp ,hightemp , SOW_min, SOW_max);
   
 // calcul du taux d adherence final
 X_adher = BAWC * (AWN / float(100) ) * (AWW / float(100) );
-
-//Serial.println("BAWC " + String(BAWC) + " AWN " + String(AWN) + " Xadhr " + String(X_adher) );
-
 // calcul du taux evaporation final
 Tau_evap = BSOC * (SON / float(100) ) * (SOW / float(100) );
 
-//Serial.println("BSOC " + String(BSOC) + " SON " + String(SON) + " tauev " + String(Tau_evap) );
-
-
-
-// calcul le temps nécessaire entre 2 in jection du meme cylindre (sur 1 cycle = 2 tours
+// calcul le temps nécessaire entre 2 injection du meme cylindre (sur 1 cycle = 2 tours
   if ( engine_rpm_average> 0){
   Tau_dt =  engine_rpm_average /120;
    Tau_dt = Tau_evap  * Tau_dt   ;

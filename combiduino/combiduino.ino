@@ -11,7 +11,7 @@
 #define CLT_USED 1 // 1 utilise la temperature moteur pour corriger l'injection 0 pas utilisé
 #define DECEL_USED 1 // 1 utilise la coupure d'injection a la décélération 0 pas utilisé
 #define LOG_PERF 0 // 1 envoi une log du temps par routine 0 pas utilisé
-#define OLD_LOG_USED 1 // 1 envoi les log rapide mais moins compréhensible 0 envoi l'ancien format
+#define SD_LOG_USED 0 // 1 envoi les log rapide pour le SD mais moins compréhensible 0 envoi l'ancien format
 
 const byte VERSION= 50;   //version du combiduino
 //-------------------------------------------- Include Files --------------------------------------------//
@@ -42,7 +42,7 @@ unsigned int Req_Fuel_us = 5000 / nombre_inj_par_cycle;  // ouverture max des in
 
 const unsigned int injector_opening_time_us = 800; // temps d'ouverture de l'injecteur en us
 const byte lissage_kpa_idle = 40 ;  // facteur lissage des KPA au ralenti
-const byte lissage_kpa_running = 40 ;  // facteur lissage des KPA au regime normal
+const byte lissage_kpa_running = 50 ;  // facteur lissage des KPA au regime normal
 
 // phase ralenti
 const int RPM_idle_max = 1100; // valeur RPM max pour déclencher le mode idle
@@ -69,7 +69,7 @@ const int accel_every_spark = 50;  // correction possible tous les x etincelle
 const int tps_lu_max = 520; // valeur ADC max lu
 
 //phase deceleration
-const int RPM_DEC_min = 1600; // coupure d'injection si supérieur a ce regime
+const int RPM_DEC_min = 1800; // coupure d'injection si supérieur a ce regime
 unsigned long time_decel = 0;
 const unsigned long interval_time_decel = 2000; // declenche la deceleration si decel depuis plus de X ms
 
@@ -82,29 +82,30 @@ const byte Kp_pourcent = 30; // taux de correction lambda 0-> 100 facteur d'appr
 boolean correction_lambda_used = true ; // correction lambda active ou non
 const byte lambda_kpa_index_min = 11; // pas de correction lambda si superieur pour proteger le ralenti
 const byte lambda_rpm_index_min = 3; // pas de correction lambda si inferieur pour proteger le ralenti
+const byte lissage_AFR = 60 ;  // facteur lissage des AFR
 
 //----------------------- X- TAU ---------------------------------------
-
+const float Xtau_max_decel = 1.2; // facteur pour limiter l appauvrissemnt en fin d accel du x tau 1.3 = 30%
 // taux d'adherence en % en fonction de la depression
-const byte BAWC_min = 10; // au mini kpa pressure_axis[0]
-const byte BAWC_max = 60; // au maxi kpa pressure_axis[nombre_point_DEP-1]
+const byte BAWC_min = 20; // au mini kpa pressure_axis[nombre_point_DEP-1]
+const byte BAWC_max = 60; // au maxi kpa pressure_axis[0]
 // taux evaporation en % en fonction de la depression
-const byte BSOC_min = 20; // au mini kpa pressure_axis[0]
-const byte BSOC_max = 60; // au maxi kpa pressure_axis[nombre_point_DEP-1]
+const byte BSOC_min = 10; // au mini kpa pressure_axis[nombre_point_DEP-1] 
+const byte BSOC_max = 60; // au maxi kpa pressure_axis[0]
 
 // facteur de correction d adherence en fonction RPM (100 = pas de correction)
-const byte AWN_min = 120; // au mini RPM rpm_axis[0]
+const byte AWN_min = 130; // au mini RPM rpm_axis[0]
 const byte AWN_max = 60; // au maxi RPM rpm_axis[nombre_point_RPM-1]
 // facteur de correction evaporation en fonction RPM (100 = pas de correction)
-const byte SON_min = 70; // au mini RPM rpm_axis[0]
-const byte SON_max = 110; // au maxi RPM rpm_axis[nombre_point_RPM-1]
+const byte SON_min = 60; // au mini RPM rpm_axis[0]
+const byte SON_max = 120; // au maxi RPM rpm_axis[nombre_point_RPM-1]
 
 // facteur de correction d adherence en fonction TEMPERATURE (100 = pas de correction)
-const byte AWW_min = 100; // au mini CLT lowtemp
+const byte AWW_min = 120; // au mini CLT lowtemp
 const byte AWW_max = 100; // au maxi CLT hightemp
 // facteur de correction evaporation en fonction RPM (100 = pas de correction)
 const byte SOW_min = 100; // au mini CLT lowtemp
-const byte SOW_max = 100; // au maxi CLT hightemp
+const byte SOW_max = 120; // au maxi CLT hightemp
 
 
 
@@ -193,7 +194,7 @@ sbi(running_option,BIT_XTAU_USED);
 sbi(running_option,BIT_OUTPUT_BT);
 
 // pas d'ego
-correction_lambda_used = true;
+correction_lambda_used = false;
 }
 
 
@@ -206,6 +207,7 @@ if (time_loop - time_reception > interval_time_reception){checkdesordres();time_
 //chek des valeur de knock
        getknock();
 // calcul du nouvel angle d avance / injection si des valeurs ont changÃ©s
+Calcul_qte_paroi(); // a chque tour
   if (BIT_CHECK(running_option,BIT_NEW_VALUE)) {deb();calcul_carto();cbi(running_option,BIT_NEW_VALUE); fin("clc");}
 // puis on gere les fonctions annexe a declencher periodiquement
  
@@ -279,15 +281,15 @@ void initTPS(){
 }
  
 void initlog(){
-  sndlog("Time;CLT;IAE;mSpark;RPM;Load;MAPdot;PhAccel;PWacc;PW;Gve;AFR;Gego;SparkAdv;TPS;TPSdot;idle;carto;PIDadv;Dec;PW_corr;Qteparoi;Xadher;Tau" ); 
-  sndlog("ms;deg;%;on/off;tr/min;kpa;kpa/s;on/off;uS;uS;%;AFR;%;deg;%;%/s;on/off;nbr;deg;%;uS;uS;%;%" ); 
+  sndlog(F("Time;CLT;IAE;mSpark;RPM;Load;MAPdot;PW;AFR;Gego;SparkAdv;TPS;idle;carto;Dec;PW_corr;AFRobj;ptKPA;ptRPM;pip") ); 
+  sndlog(F("ms;deg;%;on/off;tr/min;kpa;kpa/s;uS;AFR;%;deg;%;on/off;deg;%;uS;AFR;pt;pt;nbr") ); 
 }
 
 void Megalog(){
 
-
-# if OLD_LOG_USED == 1
+# if SD_LOG_USED == 0
 String logsend = "";
+// fin du message
   logsend = String( time_loop/ float(1000) )  + ';'
  +  CLT + ';'
  + IAE_actuel + ';'
@@ -295,28 +297,34 @@ String logsend = "";
  +  engine_rpm_average +  ';' 
  +  map_pressure_kpa +  ';' 
  +  MAP_accel +  ';' 
- +   bitRead(running_mode, BIT_ENGINE_MAP )  +  ';' 
- +  PW_accel_actuel_us  +  ';'
+// +   bitRead(running_mode, BIT_ENGINE_MAP )  +  ';' 
+// +  PW_accel_actuel_us  +  ';'
  +  injection_time_us +  ';' 
- +  VE_actuel  + ';' 
+// +  VE_actuel  + ';' 
  +  AFR_actuel/ float(10)  +  ';' 
  +  correction_lambda_actuel  +  ';'
  +  Degree_Avance_calcul  +  ';'  
  +  TPS_actuel  +  ';' 
- +  TPS_accel  + ';'
+// +  TPS_accel  + ';'
  +   bitRead(running_mode, BIT_ENGINE_IDLE )  + ';'
  +  carto_actuel  + ';'
- + PID_idle_advance  + ';'
+// + PID_idle_advance  + ';'
  + DEC_actuel  + ';'
  + PW_actuel + ';'
- + qte_paroi + ';' 
- + X_adher + ';'
- + Tau_evap + ';'
+// + qte_paroi + ';' 
+// + X_adher + ';'
+// + Tau_evap + ';'
+ + AFR_objectif/ float(10) + ';'
+ + point_KPA + ';'
+ + point_RPM + ';' 
+ + pip_fault + ';'
+ + debouncePIP + ';'
   ;
-sndlog(logsend);
+  
+  Serial.println(logsend);
 
-
-/* TEST RPM 
+/*
+// TEST RPM 
 logsend ="";
 for (int j = 0 ; j < maxpip_count; j++) { 
     logsend = logsend + String(time_readings[j]) + ";" ;
@@ -325,42 +333,56 @@ sndlog(logsend);
 */
 #endif
 
-# if OLD_LOG_USED == 0
+# if SD_LOG_USED == 1
 char buffer[100]; // make sure this is large enough for your string + 1 for NULL char
 
-sprintf(buffer, "%i;%i;%i;%i;%i;%i;%i;%i;%i;%i;%i;%i;%i;%i;%i;%i;%i;%i;%i;%i;" , 
+
+if (!BIT_CHECK(running_option,BIT_LOG_END)){ // envoi du debut du message sans CRLF
+  sprintf(buffer, "%i;%i;%i;%i;%i;%i;%i;%i;%i;%i;" , 
   (int)(time_loop/100)
- , CLT 
- , IAE_actuel 
- ,  multispark 
- ,  engine_rpm_average 
- ,  (int) (map_pressure_kpa  *100) 
- ,  MAP_accel 
- ,   bitRead(running_mode, BIT_ENGINE_MAP )   
- ,  PW_accel_actuel_us  
- ,  injection_time_us  
- ,  (int)VE_actuel  
- ,  AFR_actuel   
- ,  correction_lambda_actuel  
- ,  (int)Degree_Avance_calcul    
- ,  TPS_actuel  
- ,  TPS_accel  
- ,   bitRead(running_mode, BIT_ENGINE_IDLE )  
- ,  carto_actuel  
- , (int)PID_idle_advance  
- , (int) DEC_actuel  
-
-
-
-);
-Serial.println(buffer);
+  , CLT 
+  , IAE_actuel 
+  ,  bitRead(running_option,BIT_MS) 
+  ,  engine_rpm_average 
+  ,  (int) map_pressure_kpa  
+  ,  MAP_accel 
+ // ,   bitRead(running_mode, BIT_ENGINE_MAP )   
+ // ,  PW_accel_actuel_us  
+  ,  injection_time_us  
+ // ,  (int)VE_actuel  
+  ,  AFR_actuel   
+  ,  correction_lambda_actuel  
+  );
+  Serial.print(buffer);
+  sbi(running_option,BIT_LOG_END);
+}else{
+// fin du message
+  sprintf(buffer, "%i;%i;%i;%i;%i;%i;%i;%i;%i;" , 
+    (int)Degree_Avance_calcul    
+  ,  TPS_actuel  
+//  ,  TPS_accel  
+  ,   bitRead(running_mode, BIT_ENGINE_IDLE )  
+  ,  carto_actuel  
+//  , (int)PID_idle_advance  
+  , DEC_actuel  
+  , PW_actuel 
+//  , qte_paroi 
+//  , X_adher 
+//  , Tau_evap 
+  , AFR_objectif
+  ,point_KPA
+  ,point_RPM
+  );
+  Serial.println(buffer);
+  cbi(running_option,BIT_LOG_END);
+}
 # endif
 
 }
 
 void InitPID(){
 #if PID_IDLE_USED==1
-  idlePID.SetOutputLimits((double)(-Idle_maxoutput), (double)(Idle_maxoutput)); 
+  idlePID.SetOutputLimits((double)(Idle_minoutput), (double)(Idle_maxoutput)); 
   idlePID.SetTunings(idleKp, idleKi, idleKd); 
   idlePID.SetSampleTime(300); // tous les 100 millis
   idlePID.SetMode(MANUAL);

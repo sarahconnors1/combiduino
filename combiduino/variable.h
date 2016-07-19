@@ -43,7 +43,7 @@ byte running_option = 0;
 #define BIT_OUTPUT_BT   4    // Output Bluetooth fait
 #define BIT_FIRST_MS    5    // first multispark fait
 #define BIT_NEW_VALUE   6    // new value temps de recalculer fait
-#define BIT_RIEN        7    // rien
+#define BIT_LOG_END     7    // gestion des envoi des log en 2 parties
 
 //sbi(running_option,BIT_NEW_VALUE);
 //cbi(running_option,BIT_NEW_VALUE);
@@ -65,11 +65,12 @@ int PW_actuel = 0; // temps d'ouverture complet des injecteurs (normal + accel) 
 //------------------declaration X-Tau
 byte Tau_evap = 40; // taux d evaporation au paroi
 byte X_adher = 40; // taux d adherence au paroi
-const float Xtau_max_decel = 1.3; // facteur pour limiter l appauvrissemnt en fin d accel du x tau 1.3 = 30%
+
 int  Tau_dt = 300; 
 int qte_paroi = 0;
 int qte_paroi_previous = 0;
 unsigned int PW_previous = 0;
+boolean recalcul_paroi = false;
 
 //----------------------declaration acceleration
 const int MAP_acc_max = 6; // nombre d'indice du tableua MAP_kpas
@@ -97,6 +98,7 @@ int AFR_analogique[AFR_bin_max] ={45,   93  ,186 ,214 ,651, 744, 791, 835,1023};
 byte AFR[AFR_bin_max] =          {190 ,170  ,150 ,147 ,140, 130, 120, 110,90} ; //valeur AFR * 10
 # endif
 int AFR_actuel =147; // valeur AFR 100 -> 190
+byte AFR_objectif;
 int sum_lambda = 0;
 byte count_lambda = 0;
 const byte nbre_mesure_lambda = 4;
@@ -121,6 +123,8 @@ const int nombre_carto_max = 5; // nombre de carto a stocker
 const unsigned int debounce = 4000; // temps mini acceptable entre 2 pip 4ms-> 7500 tr/min 
 const int fixed_advance = 15;             // Avance fixe
 
+const float debouncepercent = 0.6; // pourcentage de temps d'acceleration pour le PIP
+unsigned int debouncePIP = 0 ; // temps mini entre 2 pip valide
 
 unsigned int delay_ignition = 1000; // nombre de us entre PIP et le debut du SAW
 const int angle_delay_SAW = 10 ; // nombre de degre d'attente avant envoyer le SAW 
@@ -148,6 +152,7 @@ volatile byte pip_count = 0;
 volatile unsigned int engine_rpm_average = 0;  // Initial average engine rpm pour demarrage
 byte carto_actuel = 1; //cartographie en cours
 volatile boolean ignition_on = false; // gere si le SAW est envoyé non terminé
+unsigned int pip_fault= 0;
 
 //rpm averaging array
 volatile unsigned int time_readings[maxpip_count]  ;   // array of rpm readings
@@ -216,7 +221,9 @@ int Idle_adv[Idle_maxbin] = {2,1,0,0,-1,-1,-2 }; // degré avance de compensatio
 #endif
 
 #if PID_IDLE_USED== 1
-const double Idle_maxoutput = 5; // nombre de degre max a ajouter ou enlever
+const double Idle_maxoutput = 5; // nombre de degre max a ajouter
+const double Idle_minoutput = -2; // nombre de degre max a  enlever
+
 const double idle_coeff = 0.01; 
 //double idleKp=2 * idle_coeff, idleKi=0.1 * idle_coeff, idleKd=0.5 * idle_coeff;
 double idleKp=0.8 * idle_coeff, idleKi=0.04 * idle_coeff, idleKd=0.2 * idle_coeff;
@@ -272,9 +279,8 @@ const unsigned long interval_time_check_TPS = 1000 / (TPS_check_per_S * nbre_mes
 unsigned long time_check_CLT = 0;
 const unsigned long interval_time_check_CLT = 1000 ; // CLT 1 fois / seconde
 
-
 unsigned long time_megalog = 0;
-const unsigned long interval_time_megalog = 100; // envoi des log 10 fois par seconde
+const unsigned long interval_time_megalog = 50 ; // envoi des log 10 fois par seconde
 
 //----------------------------
 // Variable pour eeprom

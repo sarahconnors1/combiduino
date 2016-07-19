@@ -199,12 +199,21 @@ void pip_interupt()  {
   
  //gestion plus simple des rpm moyens
  unsigned long delai = micros() - pip_old ; // ecart avec le précedent pip   
+
+
+ 
 if ((digitalRead(interrupt_X) == LOW) and ( delai > debounce ) ) {   
+
+// Test du faux PIP
+if  ( (delai < debouncePIP) // ecart entre 2 PIP trop petit   
+     and (BIT_CHECK(running_mode, BIT_ENGINE_RUN))  // moteur tournant
+      and !(BIT_CHECK(running_mode, BIT_ENGINE_CRANK))  // pas de cranking
+     ){
+      pip_fault ++;
+      return;
+}
+
     pip_old = micros();
-    if (delai > 65000){delai = 65000;} // pour eviter overflow
-
- //   if (delai < time_readings[pip_count] /2 ){delai = time_readings[pip_count];} // pour eviter les sauts
-
     time_total= time_total - time_readings[pip_count]; //subtract the previous reading in current array element from the total reading      //set time of current reading as the new time of the previous reading
     time_readings[pip_count] = delai;           //place current rpm value into current array element
     time_total= time_total + time_readings[pip_count]; //add the reading to the total     
@@ -237,7 +246,8 @@ ignition_mode = IGNITION_PENDING;
 
   // gestion du XTAU
   if (cylindre_en_cours == 1){
-      Calcul_qte_paroi();
+    recalcul_paroi= true;
+      
   }
 
     if ( (cylinder_injection[cylindre_en_cours - 1] == true)||(BIT_CHECK(running_mode, BIT_ENGINE_CRANK))|| !(BIT_CHECK(running_mode, BIT_ENGINE_RUN) ) ) { // si on doit injecter ou tous les tours au demmarrage
@@ -254,6 +264,7 @@ ignition_mode = IGNITION_PENDING;
     }  
  #endif // de injection used
  }
+ 
 }
 
 //------------------------------------
