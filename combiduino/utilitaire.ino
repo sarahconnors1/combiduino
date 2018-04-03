@@ -2,7 +2,7 @@
 //         UTILITAIRE
 //----------------------------------
 // gestion du mode debug avec renvoi vers la console
-void debug(String str){if (BIT_CHECK(running_option,BIT_DEBUG) ){ Serial.println(str);} }
+void debug(String str){if (BIT_CHECK(ECU.running_option,BIT_DEBUG) ){ Serial.println(str);} }
 
 void sndlog(String str){ Serial.println(str);} 
 
@@ -88,14 +88,12 @@ float mapfloat(float x, float in_min, float in_max, float out_min, float out_max
 // MESURE DEPRESSION
 //-------------------------------------
 void gestiondepression(){
-  
 sum_pressure += analogRead(MAP_pin);
 count_pressure++;
 if (count_pressure >= nbre_mesure_pressure){
    int kpa_moyen = sum_pressure / count_pressure;  
    float kpa = mapfloat(kpa_moyen,0,correction_pressure,kpa_0V,101);  // on converti la moyenne en KPA   
-   count_pressure = 0;
-   sum_pressure = 0;
+   count_pressure = 0;  sum_pressure = 0;
   // on normalise 
   #if VACUUMTYPE == 2 // avant papillon
     if (kpa < pressure_axis[0]){kpa = pressure_axis[0]; }
@@ -103,20 +101,11 @@ if (count_pressure >= nbre_mesure_pressure){
   #if VACUUMTYPE == 1 // collecteur
     if (kpa < pressure_axis[nombre_point_DEP-1]) {kpa = pressure_axis[nombre_point_DEP-1]; }
   #endif
-   if (kpa != map_pressure_kpa ) {sbi(running_option,BIT_NEW_VALUE);}
-  // on lisse
-  if (BIT_CHECK(running_mode,BIT_ENGINE_IDLE )){ // si on est en mode idle
-    kpa = map_pressure_kpa + ( (kpa - map_pressure_kpa) * lissage_kpa_idle / float(100) );
-  }else{
-    kpa = map_pressure_kpa + ( (kpa - map_pressure_kpa) * lissage_kpa_running / float(100) );
-  }
   
-  
-// nouvelle valeur   
-  map_pressure_kpa = kpa;
-  last_MAP_time = millis();
-
-}   
+  // nouvelle valeur   
+   sbi(ECU.running_option,BIT_NEW_VALUE); // on declenche un calcul d'injectrion
+   ECU.map_pressure_kpa = ECU.map_pressure_kpa + ( (kpa - ECU.map_pressure_kpa) * lissage_kpa_running / float(100) ); // on lisse
+  }   
    
 }  
 //-------------------------------------
@@ -125,24 +114,19 @@ if (count_pressure >= nbre_mesure_pressure){
 void gestionTPS(){
   sum_TPS += analogRead(TPS_pin);
   count_TPS++;
-// debug(String(analogRead(TPS_pin)));
  if (count_TPS >= nbre_mesure_TPS){
    int TPS_moyen = sum_TPS / count_TPS;  
-   //var1 = TPS_moyen;
+   ECU.var1 = TPS_moyen;  // pour avoir le mini/maxi dans les logs
    if (TPS_moyen<tps_lu_min){TPS_moyen=tps_lu_min;} // check valeur mini
+   if (TPS_moyen>tps_lu_max){TPS_moyen=tps_lu_max;} // check valeur maxi
    
    int TPS = map(TPS_moyen,tps_lu_min,tps_lu_max,0,100);  // on converti la moyenne en %  
-   count_TPS = 0;
-   sum_TPS = 0;
-   if (TPS != TPS_actuel ) {sbi(running_option,BIT_NEW_VALUE);}
-
-   if ( abs(TPS - TPS_actuel) > TPS_ecart_representatif ){ // si ecart est representatif
-   TPS_actuel = TPS;
-   }
+   count_TPS = 0; sum_TPS = 0;
    
-   last_TPS_time = millis();
-
-   gestionTPSMAPdot();
+   // on met  à jour 
+   sbi(ECU.running_option,BIT_NEW_VALUE); // nouveau calcul d'injection demandé
+   ECU.TPS_actuel = ECU.TPS_actuel + ( (TPS - ECU.TPS_actuel) * lissage_TPS_running / float(100) ); // on lisse
+   ECU.TPS_actuel = TPS;
  }
 }
 
@@ -151,7 +135,7 @@ void gestionTPS(){
 //-------------------------------------
 void gestionCLT(){
   int CLT_lu = analogRead(CLT_pin);
-   CLT = map(CLT_lu,lowtemp_lu,hightemp_lu, lowtemp, hightemp);  // on converti la moyenne en %  
+   ECU.CLT = map(CLT_lu,lowtemp_lu,hightemp_lu, lowtemp, hightemp);  // on converti la moyenne en %  
   // Serial.println(" temp degre " + String(CLT) + " CLT lu = " + String(CLT_lu) );
 }
 
@@ -176,27 +160,25 @@ int afr_lu = 0;
 sum_lambda += afr_lu;
 count_lambda++;
 
-
-  if (count_lambda >= nbre_mesure_lambda){
+if (count_lambda >= nbre_mesure_lambda){
     afr_lu = sum_lambda / count_lambda;
     count_lambda = sum_lambda = 0;
-//Serial.println("lambda " + String(afr_lu) );
+
 #if LAMBDATYPE == 2 // narrowband 
     if (afr_lu > AFR_analogique[AFR_bin_max -1]) { // borne maxi  
-      AFR_actuel = AFR[AFR_bin_max -1];
+      ECU.AFR_actuel = AFR[AFR_bin_max -1];
     }  else if (afr_lu <AFR_analogique[0]){ // borne mini
-      AFR_actuel = AFR[0];
+      ECU.AFR_actuel = AFR[0];
     } else {
       point_afr = decode_afr(afr_lu);
-      AFR_actuel = map(afr_lu,AFR_analogique[point_afr],AFR_analogique[point_afr + 1],AFR[point_afr],AFR[point_afr + 1]) ; // on fait une interpolation
+      ECU.AFR_actuel = map(afr_lu,AFR_analogique[point_afr],AFR_analogique[point_afr + 1],AFR[point_afr],AFR[point_afr + 1]) ; // on fait une interpolation
     }
 #endif
 
 #if LAMBDATYPE == 1 //wideband
   byte AFR_temp ;
-  
   AFR_temp = map(afr_lu,0,1023,86,190) ; // on fait une interpolation lineaire
-  AFR_actuel = AFR_actuel + ( (AFR_temp - AFR_actuel) * lissage_AFR / float(100) );
+  ECU.AFR_actuel = ECU.AFR_actuel + ( (AFR_temp - ECU.AFR_actuel) * lissage_AFR / float(100) );
 #endif
 
   }
@@ -208,25 +190,18 @@ count_lambda++;
 //--------------------------------------------
 void gestionTPSMAPdot(){
 // Pour TPS ///////////////////////////////
-  if ( (last_TPS_time - previous_TPS_time) > 0 ){
-    TPS_accel = (TPS_actuel - previous_TPS) * float(1000)/ (last_TPS_time - previous_TPS_time) ; // calcul en %/S
-  }else{
-    TPS_accel = TPS_accel; // si pas de nouvel valeur
-  }   
-  if (TPS_accel < -50 ){TPS_accel = -50;} // sanity check
-  previous_TPS =  TPS_actuel;
-  previous_TPS_time = last_TPS_time;
+  ECU.TPSdot = (ECU.TPS_actuel - previous_TPS) * float(1000)/ (interval_time_check_TPSMAPdot) ; // calcul en %/S
+  if (ECU.TPSdot < -50 ){ECU.TPSdot = -50;} // sanity check
+  previous_TPS =  ECU.TPS_actuel;
 
 // pour KPA ///////////////////
-  if ( (last_MAP_time - previous_MAP_time) > 0 ){
-      MAP_accel = (map_pressure_kpa - previous_map_pressure_kpa) * float(1000) / (last_MAP_time - previous_MAP_time) ; // calcul en %/S
-  }else{
-      MAP_accel = MAP_accel; // si pas de nouvel valeur
-  }   
-  if (MAP_accel < -50 ){MAP_accel = -50;} // sanity check
+      ECU.MAPdot = (ECU.map_pressure_kpa - previous_map_pressure_kpa) * float(1000) / (interval_time_check_TPSMAPdot) ; // calcul en kpa/S
+  if (ECU.MAPdot < -50 ){ECU.MAPdot = -50;} // sanity check
+  previous_map_pressure_kpa =  ECU.map_pressure_kpa;
 
-  previous_map_pressure_kpa =  map_pressure_kpa;
-  previous_MAP_time = last_MAP_time;
+// Calcul du facteur  d'acceleration qui servira pour la pompe de reprise
+  sbi(ECU.running_option,BIT_NEW_VALUE); // nouveau calcul d'injection demandé
+  ECU.TPSMAPdot = (ECU.MAPdot * MAPdot_weight + ECU.TPSdot * TPSdot_weight) /100; 
 }
 
 //------------------------  
@@ -308,7 +283,16 @@ int decode_afr(int afr_) {
 
 // routine de calcul des RPM moyen basé sur les x dernier pip
 void calculRPM(){
-  engine_rpm_average = (30000000 * maxpip_count) / (time_total ); 
-  debouncePIP = time_total * debouncepercent / maxpip_count ;
+  ECU.engine_rpm_average = (30000000 * maxpip_count) / (time_total );
+
+// calcul de la valeur mini entre 2 PIP  
+if  ( (BIT_CHECK(ECU.running_mode, BIT_ENGINE_RUN))  // moteur tournant
+      and !(BIT_CHECK(ECU.running_mode, BIT_ENGINE_CRANK))  // pas de cranking
+    and ECU.engine_rpm_average>1100 //pour eviter overflox
+     ){   
+        debouncePIP = time_total * debouncepercent / maxpip_count ;
+     }else{
+        debouncePIP = 65500; 
+     }
 }
 

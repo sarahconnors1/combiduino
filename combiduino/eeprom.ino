@@ -193,15 +193,15 @@ void read_eeprom() {
   
    writeego_eeprom_ram(); // Lecture de la correction EGO
 // lecture carto actuel
-  carto_actuel = EEPROM.read(eprom_carto_actuel);
-  if  (carto_actuel > nombre_carto_max)  { // carto invalide on remet la carto 1
+  ECU.carto_actuel = EEPROM.read(eprom_carto_actuel);
+  if  (ECU.carto_actuel > nombre_carto_max)  { // carto invalide on remet la carto 1
     EEPROM.write(eprom_carto_actuel, 1); // MAP en cours = 1
-    carto_actuel = 1;
+    ECU.carto_actuel = 1;
   }
 
   // on lit l'eeprom pour les mettre en RAM
-   writecarto_eeprom_ram(carto_actuel);
-  debug ("Read EEPROM carto nr " + String(carto_actuel));
+   writecarto_eeprom_ram(ECU.carto_actuel);
+  debug ("Read EEPROM carto nr " + String(ECU.carto_actuel));
  
 
   
@@ -211,12 +211,12 @@ void read_eeprom() {
   
   if  (debugtemp > 1 ){
     EEPROM.write(eprom_debug, 0); // debug par defaut a non
-    cbi(running_option,BIT_DEBUG);
+    cbi(ECU.running_option,BIT_DEBUG);
    } else{
      if (debugtemp == 0 ){
-         cbi(running_option,BIT_DEBUG);
+         cbi(ECU.running_option,BIT_DEBUG);
        }else{
-         sbi(running_option,BIT_DEBUG) ; 
+         sbi(ECU.running_option,BIT_DEBUG) ; 
        }
   }
 
@@ -248,12 +248,12 @@ void read_eeprom() {
   
   if  (mstemp > 1 ){
     EEPROM.write(eprom_ms, 1); // debug par defaut a oui
-    cbi(running_option,BIT_MS);
+    cbi(ECU.running_option,BIT_MS);
    } else{
      if (mstemp == 0 ){
-         cbi(running_option,BIT_MS);
+         cbi(ECU.running_option,BIT_MS);
        }else{
-         sbi(running_option,BIT_MS);  
+         sbi(ECU.running_option,BIT_MS);  
        //  first_multispark = true;
        }
   }

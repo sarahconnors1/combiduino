@@ -16,7 +16,7 @@ int vol3 = k3.toInt();
    total_knock = total_knock + vol1 + vol2 + vol3;
    // on fait la moyenne
    if (count_knock >= count_knock_max ){
-     int binknock = decode_rpm(engine_rpm_average);
+     int binknock = decode_rpm(ECU.engine_rpm_average);
      if (knock_record == true){ // si on est en cours d'enregistrement du knock
        knockvalue[binknock] = knockvalue[binknock] + total_knock;
        knockcount[binknock] = knockcount[binknock] +  count_knock_max;

@@ -11,35 +11,35 @@ void checkdesordres(){
     inputString.trim(); 
   if(inputString == "fixed") {
         debug("Fixed Advance Selected");
-        sbi(running_option,BIT_FIXED_ADV);
+        sbi(ECU.running_option,BIT_FIXED_ADV);
    }
    else if (inputString == "map") {
         debug("Ignition Advance Selected");
-        cbi(running_option,BIT_FIXED_ADV);
+        cbi(ECU.running_option,BIT_FIXED_ADV);
    }
    else if (inputString == "dbg on") {
         debug("debug ON");
-        sbi(running_option,BIT_DEBUG);
+        sbi(ECU.running_option,BIT_DEBUG);
    }
    else if (inputString == "dbg off") {
         debug("debug OFF");
-       cbi(running_option,BIT_DEBUG);
+       cbi(ECU.running_option,BIT_DEBUG);
    }
    
    else if (inputString == "ms on") {
          debug("Multispark Enabled");
-         sbi(running_option,BIT_MS);
+         sbi(ECU.running_option,BIT_MS);
        //  first_multispark = true;
    }
    else if (inputString == "ms off") {
          debug("Multispark Disabled");
-         cbi(running_option,BIT_MS);
+         cbi(ECU.running_option,BIT_MS);
    }
    else if (inputString == "output on"){
-      sbi(running_option,BIT_OUTPUT_BT);
+      sbi(ECU.running_option,BIT_OUTPUT_BT);
     }
     else if (inputString == "output off"){
-      cbi(running_option,BIT_OUTPUT_BT);
+      cbi(ECU.running_option,BIT_OUTPUT_BT);
    }
     else if (inputString == "plus"){
       correction_degre = correction_degre + 3;
@@ -211,15 +211,15 @@ void send_setting1_ecu(){
   
    if ( (carto.toInt() > 0) and (carto.toInt() <= nombre_carto_max) ) {
      EEPROM.write(eprom_carto_actuel, carto.toInt()); // MAP en cours = 1
-     carto_actuel = carto.toInt();
+     ECU.carto_actuel = carto.toInt();
    }   
    if ( (debug.toInt() >= 0) and (debug.toInt() <= 1) ) {
      EEPROM.write(eprom_debug, debug.toInt()); // debug 
 
      if (debug.toInt() == 0){
-      cbi(running_option,BIT_DEBUG);
+      cbi(ECU.running_option,BIT_DEBUG);
      }else{
-      sbi(running_option,BIT_DEBUG);
+      sbi(ECU.running_option,BIT_DEBUG);
      }
      
    }
@@ -258,9 +258,9 @@ void send_setting3_ecu(){
      EEPROM.write(eprom_ms, ms.toInt()); // debug 
     
     if (ms.toInt() == 0){
-      cbi(running_option,BIT_MS);
+      cbi(ECU.running_option,BIT_MS);
     }else{
-      sbi(running_option,BIT_MS);
+      sbi(ECU.running_option,BIT_MS);
     }
 
      
@@ -317,9 +317,9 @@ void changement_carto(){
   String carto="1";
   carto = getValue(inputString, ';', 1) ; // 1er parametre
   if ( (carto.toInt() >0) && (carto.toInt() <= nombre_carto_max) ){
-    carto_actuel = carto.toInt();
+    ECU.carto_actuel = carto.toInt();
    // EEPROM.write(eprom_carto_actuel,carto_actuel); // SAV de la derniere carto en cours
-    writecarto_eeprom_ram(carto_actuel); // on ecrit la carto en RAM + axe KPA/RPM
+    writecarto_eeprom_ram(ECU.carto_actuel); // on ecrit la carto en RAM + axe KPA/RPM
   debug("carto change" + carto);
   }else{
     debug("carto invalide" + carto);
@@ -473,45 +473,45 @@ void changement_point_carto(){
 //------------Envoi de donnee dans le port serie / BT
 //-----------------------------------------------------
 void gestionsortieECU(){
+# if BLUETOOTH_USED == 1
 String SortieBT;
-// on envoie au port serie pour debug
-if (BIT_CHECK(running_option,BIT_DEBUG) && 1==2 ){
-//if (debugging == true  ){
-  debug("RPM :" +String(engine_rpm_average)+ " MAP :" + String(map_pressure_kpa) + " DEG :"+ String(Degree_Avance_calcul) + " MAP_US :"+String(map_value_us) ) ;
-}
 
 // on envoie au port BT
-if (BIT_CHECK(running_option,BIT_OUTPUT_BT)){
+if (BIT_CHECK(ECU.running_option,BIT_OUTPUT_BT)){
   // parm 1 RPM
   // parm 2 depression actuel
   // parm 3 degre actuel
  // ECU;9999;100;032 // RPM KPA Degre
-   SortieBT = "ECU;" + String(engine_rpm_average) + ";" + String((int)(map_pressure_kpa)) + ";"+ String((int)(Degree_Avance_calcul )) ; 
+   SortieBT = "ECU;" + String(ECU.engine_rpm_average) + ";" + String((int)(ECU.map_pressure_kpa)) + ";"+ String((int)(ECU.Degree_Avance_calcul )) ; 
    Send_to_BT(SortieBT); 
   }
- 
+
+ #endif
  } 
  
 void gestionsortieEC1(){
+# if BLUETOOTH_USED == 1
 String SortieBT;
 // on envoie au port serie pour debug
 
 // on envoie au port BT
-if (BIT_CHECK(running_option,BIT_OUTPUT_BT)){
+if (BIT_CHECK(ECU.running_option,BIT_OUTPUT_BT)){
   // parm 1 carto actuelle
   // parm 2 correction actuel
   // parm 3 libre knock KNOCK MOYEN
   // parm 4 libre knock DIFFERENCE actuel - Moyen
  // var1=map_value_us;
-var1 = TPS_actuel;
-var2 = AFR_actuel;
+var1 = ECU.TPS_actuel;
+var2 = ECU.AFR_actuel;
 //var2 = acceleration_actuel;
-   SortieBT = "EC1;" + String(carto_actuel) + ";" + String(correction_degre) +";"+String(var1)+";" + String(var2) ; 
+   SortieBT = "EC1;" + String(ECU.carto_actuel) + ";" + String(correction_degre) +";"+String(var1)+";" + String(var2) ; 
  
  
    Send_to_BT(SortieBT); 
   }
- 
+
+#endif
+
 } 
 
 void printego_ram(){
