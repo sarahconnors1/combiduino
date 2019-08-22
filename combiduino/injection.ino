@@ -9,16 +9,26 @@ void calcul_injection(){
 #if INJECTION_USED == 1  
 
 ECU.AFR_objectif = AFR_map[ECU.point_KPA][ECU.point_RPM]; // calcul de l'AFR ideal
-
-ECU.PW_accel_actuel_us = ACCEL(ECU.TPSMAPdot);  // calcul pompe de reprise
-ECU.correction_lambda_actuel = correction_lambda();
-ECU.VE_actuel = VE_MAP();
-int WAS_actuel = WAS();
-ECU.IAE_actuel = IAE();
-ECU.DEC_actuel = Decel();
-
-  // le temps d'injection est :  temps d'ouverture injecteur + le max a pleine puissance (Req_Fuel) * VE de la map en % * Correction enrichissement en % * corection lambda en %
+//****************************
+// Calcul prealable necessaire
+//**************************** 
+# if ACCEL_USED==1
+PW_accel_actuel_us = ACCEL(TPSMAPdot);  // calcul pompe de reprise
+# endif
+ECU.correction_lambda_actuel = correction_lambda();  
+ECU.VE_actuel = VE_MAP();  // recherhe dans la carto 
+int WAS_actuel = WAS();   // enrichicssement post demarrage
+ECU.IAE_actuel = IAE();   // enrichissemnt suivant la temperature moteur
+ECU.DEC_actuel = Decel();  // check de la deceleration   
+ECU.tps_ouverture_injecteur_us = IOT(); // calcul du temps d'ouverture des injecteurs suivant la tension en volt
  
+//***************************
+// Calcul du temps d'injection
+//***************************  
+// le temps d'injection est :  temps d'ouverture injecteur +
+// le max a pleine puissance (Req_Fuel) * VE de la map en % * Correction enrichissement en % * corection lambda en %
+
+
    ECU.injection_time_us =  Req_Fuel_us  
   * (ECU.VE_actuel/float(100) )
   * (ECU.map_pressure_kpa / float(100) )
@@ -26,15 +36,27 @@ ECU.DEC_actuel = Decel();
   * (WAS_actuel / float(100)  )
    * (ECU.IAE_actuel / float(100)  )
    * (ECU.DEC_actuel / float(100)  )
+   * (ECU.MCE_actuel / float(100)  )   
   ;
-
 // pour le Xtau
 Calcul_PW_actuel_corrige_XTAU();
-
-tick_injection  = ( ECU.PW_actuel + injector_opening_time_us  )* prescalertimer5 ;
+tick_injection  = ( ECU.PW_actuel + ECU.tps_ouverture_injecteur_us  )* prescalertimer5 ;
 #endif
 }
+//--------------------------------------------------------
+// Correction duree d'ouverture injecteur suivant la tension
+//--------------------------------------------------------
+int IOT(){
+#if VOLT_CORR_USED == 1 
+  if (ECU.VLT < VLTmin){ return injector_opening_time_us_VLTmin;}
+  if (ECU.VLT > VLTmax){ return injector_opening_time_us_VLTmax;}
+  return  map(ECU.VLT , VLTmin, VLTmax , injector_opening_time_us_VLTmin,injector_opening_time_us_VLTmax );
+#endif
 
+#if VOLT_CORR_USED == 0
+  return injector_opening_time_us; 
+#endif
+}
 //--------------------------------------------------------
 // Enrichissemnt apres demmarrage pendant une pÃ©riode donnÃ©e
 //--------------------------------------------------------
@@ -107,6 +129,8 @@ return VE;
 // on renvoie l'enrichissement du tableau MAP_acceleration x req fuel
 
 int ACCEL(int BASE_accel){
+#if ACCEL_USED==1
+ 
  float extrafuel = 0; // 0 = Pas d'enrichissement
  byte bin = 0;
  byte bin1 = 0;
@@ -120,7 +144,7 @@ if ( (ECU.engine_rpm_average >RPM_ACC_max) or ( !BIT_CHECK(ECU.running_mode,BIT_
 
  // si en cours d'acceleraion et accel pas fini et  accerleration initiale > acceleration actuel  
 if ( (nbr_spark < last_accel_spark + accel_every_spark) and ( BIT_CHECK(ECU.running_mode,BIT_ENGINE_ACC)) and (saved_accel>BASE_accel)    ){  
-        return ECU. PW_accel_actuel_us;
+        return PW_accel_actuel_us;
 }
 
 // Si on arrive la c 'est qu'il n'y a pas d'acceleration en cours
@@ -155,6 +179,13 @@ if (extrafuel == 0){
 }
 saved_accel = BASE_accel; // on sauvegarde l'accel actuel 
 return extrafuel;
+#endif
+
+#if ACCEL_USED==0
+  cbi(ECU.running_mode,BIT_ENGINE_ACC);
+  return 0;
+#endif
+
 }
 /*
 //----------------------------------------------------
@@ -248,7 +279,7 @@ void checkpump(){
 // ----------------------------------------------------------
 byte correction_lambda(){
 
-if (  (correction_lambda_used == true )
+if (  BIT_CHECK(ECU.running_mode,BIT_EGO_ACTIVE)
   and (!BIT_CHECK(ECU.running_mode,BIT_ENGINE_ACC)  ) 
   and (!BIT_CHECK(ECU.running_mode,BIT_ENGINE_IDLE ) )
   and (!BIT_CHECK(ECU.running_mode,BIT_ENGINE_DCC ) ) ) { //correction lambda et pas d'acceleration en cours et pas au ralenti et pas en coupure deceleration 
@@ -267,7 +298,7 @@ EGO_temp = binC * Ego_map [pressure_index_high] [rpm_index_low] / float(100)
  AFR_actuel_double = (double)(ECU.AFR_actuel) ;
  AFR_objectif_double =(double)(ECU.AFR_objectif);
  egoPID.Compute();
- ECU.var2 = correction_lambda_actuel_double;
+ 
  return 100 + correction_lambda_actuel_double;
 #endif
     

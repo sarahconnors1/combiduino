@@ -90,21 +90,25 @@ float mapfloat(float x, float in_min, float in_max, float out_min, float out_max
 void gestiondepression(){
 sum_pressure += analogRead(MAP_pin);
 count_pressure++;
-if (count_pressure >= nbre_mesure_pressure){
-   int kpa_moyen = sum_pressure / count_pressure;  
-   float kpa = mapfloat(kpa_moyen,0,correction_pressure,kpa_0V,101);  // on converti la moyenne en KPA   
-   count_pressure = 0;  sum_pressure = 0;
-  // on normalise 
-  #if VACUUMTYPE == 2 // avant papillon
-    if (kpa < pressure_axis[0]){kpa = pressure_axis[0]; }
-  #endif
-  #if VACUUMTYPE == 1 // collecteur
-    if (kpa < pressure_axis[nombre_point_DEP-1]) {kpa = pressure_axis[nombre_point_DEP-1]; }
-  #endif
+  if (count_pressure >= nbre_mesure_pressure){
+    unsigned int kpa_moyen = (float) sum_pressure / count_pressure;  
+    float kpa = mapfloat(kpa_moyen,0,correction_pressure,kpa_0V,101);  // on converti la moyenne en KPA   
+    count_pressure = 0;  sum_pressure = 0;
+    // on normalise 
+    #if VACUUMTYPE == 2 // avant papillon
+      if (kpa < pressure_axis[0]){kpa = pressure_axis[0]; }
+    #endif
+    #if VACUUMTYPE == 1 // collecteur
+      if (kpa < pressure_axis[nombre_point_DEP-1]) {kpa = pressure_axis[nombre_point_DEP-1]; }
+    #endif
   
-  // nouvelle valeur   
-   sbi(ECU.running_option,BIT_NEW_VALUE); // on declenche un calcul d'injectrion
-   ECU.map_pressure_kpa = ECU.map_pressure_kpa + ( (kpa - ECU.map_pressure_kpa) * lissage_kpa_running / float(100) ); // on lisse
+    // nouvelle valeur   
+    sbi(ECU.running_option,BIT_NEW_VALUE); // on declenche un calcul d'injectrion
+    ECU.map_pressure_kpa = ECU.map_pressure_kpa + ( (kpa - ECU.map_pressure_kpa) * (float) lissage_kpa_running / float(100) ); // on lisse
+//    Serial.println("kpa " + (String) kpa + " coreection_pressure " + (String) correction_pressure + " kpa_0V " + (String) kpa_0V + " kpa_moyen " + 
+//    (String) kpa_moyen + " sum_pressure " + (String) sum_pressure  + " ECU " + (String) ECU.map_pressure_kpa );
+
+   // ECU.map_pressure_kpa = kpa; // on lisse pas
   }   
    
 }  
@@ -116,7 +120,7 @@ void gestionTPS(){
   count_TPS++;
  if (count_TPS >= nbre_mesure_TPS){
    int TPS_moyen = sum_TPS / count_TPS;  
-   ECU.var1 = TPS_moyen;  // pour avoir le mini/maxi dans les logs
+ //  var1 = TPS_moyen;  // pour avoir le mini/maxi dans les logs
    if (TPS_moyen<tps_lu_min){TPS_moyen=tps_lu_min;} // check valeur mini
    if (TPS_moyen>tps_lu_max){TPS_moyen=tps_lu_max;} // check valeur maxi
    
@@ -125,7 +129,7 @@ void gestionTPS(){
    
    // on met  à jour 
    sbi(ECU.running_option,BIT_NEW_VALUE); // nouveau calcul d'injection demandé
-   ECU.TPS_actuel = ECU.TPS_actuel + ( (TPS - ECU.TPS_actuel) * lissage_TPS_running / float(100) ); // on lisse
+  // ECU.TPS_actuel = ECU.TPS_actuel + ( (TPS - ECU.TPS_actuel) * lissage_TPS_running / float(100) ); // on lisse
    ECU.TPS_actuel = TPS;
  }
 }
@@ -133,11 +137,24 @@ void gestionTPS(){
 //-------------------------------------
 // MESURE Temperature
 //-------------------------------------
-void gestionCLT(){
+void gestionCLT(){  
   int CLT_lu = analogRead(CLT_pin);
    ECU.CLT = map(CLT_lu,lowtemp_lu,hightemp_lu, lowtemp, hightemp);  // on converti la moyenne en %  
   // Serial.println(" temp degre " + String(CLT) + " CLT lu = " + String(CLT_lu) );
 }
+//-------------------------------------
+// MESURE Voltage
+//-------------------------------------
+void gestionVLT(){
+  sum_VLT += analogRead(VLT_pin);
+  count_VLT++;
+  if (count_VLT >= nbre_mesure_VLT){
+   int VLT_moyen = sum_VLT / count_VLT;
+   count_VLT = 0; sum_VLT = 0;
+   ECU.VLT = map(VLT_moyen,lowvlt_lu,highvlt_lu, lowvlt, highvlt);  // on converti la moyenne en voltage sur 1 byte  
+  }
+}
+
 
 //-----------------------------------------------------------
 //  MESURE LAMBDA
@@ -189,19 +206,21 @@ if (count_lambda >= nbre_mesure_lambda){
 // calcul du nombre de KPA / TPS par seconde 
 //--------------------------------------------
 void gestionTPSMAPdot(){
+#if ACCEL_USED == 1  
 // Pour TPS ///////////////////////////////
-  ECU.TPSdot = (ECU.TPS_actuel - previous_TPS) * float(1000)/ (interval_time_check_TPSMAPdot) ; // calcul en %/S
-  if (ECU.TPSdot < -50 ){ECU.TPSdot = -50;} // sanity check
+  TPSdot = (ECU.TPS_actuel - previous_TPS) * float(1000)/ (interval_time_check_TPSMAPdot) ; // calcul en %/S
+  if (TPSdot < -50 ){TPSdot = -50;} // sanity check
   previous_TPS =  ECU.TPS_actuel;
 
 // pour KPA ///////////////////
-      ECU.MAPdot = (ECU.map_pressure_kpa - previous_map_pressure_kpa) * float(1000) / (interval_time_check_TPSMAPdot) ; // calcul en kpa/S
-  if (ECU.MAPdot < -50 ){ECU.MAPdot = -50;} // sanity check
+      MAPdot = (ECU.map_pressure_kpa - previous_map_pressure_kpa) * float(1000) / (interval_time_check_TPSMAPdot) ; // calcul en kpa/S
+  if (MAPdot < -50 ){MAPdot = -50;} // sanity check
   previous_map_pressure_kpa =  ECU.map_pressure_kpa;
 
 // Calcul du facteur  d'acceleration qui servira pour la pompe de reprise
   sbi(ECU.running_option,BIT_NEW_VALUE); // nouveau calcul d'injection demandé
-  ECU.TPSMAPdot = (ECU.MAPdot * MAPdot_weight + ECU.TPSdot * TPSdot_weight) /100; 
+  TPSMAPdot = (MAPdot * MAPdot_weight + TPSdot * TPSdot_weight) /100; 
+# endif
 }
 
 //------------------------  

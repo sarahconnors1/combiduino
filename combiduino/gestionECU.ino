@@ -11,21 +11,33 @@ if ( (micros() - pip_old) > 100000){ECU.engine_rpm_average = 0;}
 
 // Check si en cours de dÃ©marrage 
 if ( (ECU.engine_rpm_average < rev_mini) && (ECU.engine_rpm_average > 0) ) {
-   sbi(ECU.running_mode,BIT_ENGINE_CRANK);}else{cbi(ECU.running_mode,BIT_ENGINE_CRANK);}
+   sbi(ECU.running_mode,BIT_ENGINE_CRANK);
+   }else{
+   cbi(ECU.running_mode,BIT_ENGINE_CRANK);
+   }
 
 // check si running 
 if (ECU.engine_rpm_average == 0){
   cbi(ECU.running_mode,BIT_ENGINE_RUN);}else{sbi(ECU.running_mode,BIT_ENGINE_RUN);}
 
 // Check si WARM UP
-if (ECU.CLT > IAEhightemp ) {sbi(ECU.running_mode,BIT_ENGINE_WARMUP);}else{cbi(ECU.running_mode,BIT_ENGINE_WARMUP);}
+if (ECU.CLT > IAEhightemp ) {
+    cbi(ECU.running_mode,BIT_ENGINE_WARMUP);
+  }else{
+    sbi(ECU.running_mode,BIT_ENGINE_WARMUP);
+  }
 
 // check du mode idle
 #if TPS_USED==1  
 if ( (ECU.engine_rpm_average <= RPM_idle_max) and (ECU.engine_rpm_average > rev_mini) and (ECU.TPS_actuel <= TPS_idle_max) and (ECU.map_pressure_kpa <= MAP_idle_max) ){
 # endif
 #if TPS_USED==0  
-if ( (ECU.engine_rpm_average <= RPM_idle_max) and (ECU.engine_rpm_average > rev_mini) and (ECU.map_pressure_kpa <= MAP_idle_max) ){
+if ( ( (ECU.engine_rpm_average <= RPM_idle_max) and (ECU.engine_rpm_average > rev_mini) 
+and (ECU.map_pressure_kpa <= MAP_idle_max)  ) // cas classique
+or 
+( (ECU.engine_rpm_average <= RPM_idle_max) and (ECU.engine_rpm_average > rev_mini)   // ou si on est en warm up plus souple
+and (ECU.map_pressure_kpa <= MAP_idle_max_warmup) and BIT_CHECK(ECU.running_mode,BIT_ENGINE_WARMUP) ) 
+){
 # endif
   sbi(ECU.running_mode,BIT_ENGINE_IDLE); 
 }else{
@@ -50,7 +62,18 @@ if ( (ECU.engine_rpm_average > RPM_DEC_min)
     time_decel = 0; 
 }
 
-
+// check de correction EGO possible
+if (BIT_CHECK(ECU.running_mode,BIT_ENGINE_WARMUP ) ) { // si encore en Warm UP
+   cbi(ECU.running_mode,BIT_EGO_ACTIVE);
+}else{ 
+  if (!BIT_CHECK(ECU.running_mode,BIT_EGO_ACTIVE) // fin du warm up et EGO pas encore activé
+  and (correction_lambda_used == true) ) { 
+    sbi(ECU.running_mode,BIT_EGO_ACTIVE);
+    // RAZ du PID et demarrage
+    egoPID.SetMode(AUTOMATIC);
+  }
+  
+}
 
 
 // recalcul des nouvelles valeur avance et injection

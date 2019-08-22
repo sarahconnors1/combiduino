@@ -35,7 +35,7 @@ String logsend = "";
 // + debouncePIP + ';'
   ;
   
- // Serial.println(logsend);
+  Serial.println(logsend);
 
 #endif
 
@@ -56,7 +56,7 @@ char buffer[150]; // make sure this is large enough for your string + 1 for NULL
   ,  ECU.correction_lambda_actuel  
   ,  (int)ECU.Degree_Avance_calcul    
   ,  ECU.TPS_actuel  
-  ,  ECU.TPSdot  
+//  ,  ECU.TPSdot  
   ,   ECU.running_mode  
   ,  ECU.carto_actuel  
   , (int)ECU.PID_idle_advance  

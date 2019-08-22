@@ -46,7 +46,9 @@ void Calcul_PW_actuel_corrige_XTAU(){
     ECU.PW_actuel = ECU.injection_time_us;
   }
 
-  ECU.PW_actuel += ECU. PW_accel_actuel_us;  // On rajoute la pompe de reprise
+#if ACCEL_USED == 1
+  ECU.PW_actuel += PW_accel_actuel_us;  // On rajoute la pompe de reprise
+# endif
 
 }
 void Calcul_qte_paroi(){

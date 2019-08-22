@@ -9,15 +9,7 @@ void checkdesordres(){
  
   if (stringComplete){   
     inputString.trim(); 
-  if(inputString == "fixed") {
-        debug("Fixed Advance Selected");
-        sbi(ECU.running_option,BIT_FIXED_ADV);
-   }
-   else if (inputString == "map") {
-        debug("Ignition Advance Selected");
-        cbi(ECU.running_option,BIT_FIXED_ADV);
-   }
-   else if (inputString == "dbg on") {
+   if (inputString == "dbg on") {
         debug("debug ON");
         sbi(ECU.running_option,BIT_DEBUG);
    }
@@ -51,82 +43,6 @@ void checkdesordres(){
     //parm 1 nr de carto 
       changement_carto(); // REVU
     }
-    else if (inputString.startsWith("chg;") ) {// change la 1 point de la carto x
-    //parm 1 nr de carto RAM
-    //parm 2 point RPM 0 -> 22
-    //parm 3 point KPA 0 -> 16
-    //parm 4 degre
-      changement_point_carto(); // REVU
-    }
-    else if (inputString.startsWith("sndcarto;") ) {//envoie la carto eeprom => IPHONE
-      //parm 1 nr de carto EEPROM
-      send_carto_iphone(); // REVU
-    }
-    else if (inputString.startsWith("sndkpa;") ) {//envoie l axe KPA eeprom => IPHONE
-      //parm 1 nr de carto EEPROM
-      send_kpa_iphone(); // REVU
-    }
-    else if (inputString.startsWith("gtkpa;") ) {//envoie l axe KPA iphone => ECU
-      //parm 1 nr de carto EEPROM
-      // parm 2 point kpa
-      // parm 3 valeur
-      get_kpa_iphone(); // REVU
-    }
-    else if (inputString.startsWith("sndrpm;") ) {//envoie l axe RPM eeprom => I PHONE
-      //parm 1 nr de carto EEPROM
-      send_rpm_iphone(); // REVU
-    }
-    else if (inputString.startsWith("gtrpm;") ) {//envoie l axe RPM iphone => ECU
-      //parm 1 nr de carto EEPROM
-      // parm 2 point rpm
-      // parm 3 valeur
-      get_rpm_iphone(); // REVU
-    }
-    else if (inputString.startsWith("gt1") ) {//envoie le setting a l'iphone
-      //parm retour carto demarrage 
-      // debug 1/0 (oui/non)
-      //rev mini
-      // rev maxi
-      // retour exemple "gt1;5;0;1000;6000
-      send_setting1_iphone();
-    }
-     else if (inputString.startsWith("st1;") ) {//ecrit le nouveau setting dans eeprom 
-      //parm retour carto demarrage 
-      // debug 1/0 (oui/non)
-      //rev mini
-      // rev maxi
-      //  exemple "st1;5;0;1000;6000
-      send_setting1_ecu();
-    }
-      else if (inputString.startsWith("gt2") ) {//envoie le setting a l'iphone
-      //parm retour nom bluettooth 
-      // retour exemple "gt2;combiduino
-      send_setting2_iphone();
-    }
-     else if (inputString.startsWith("st2;") ) {//ecrit le nouveau setting dans eeprom 
-      //parm retour nom bluetooth
-      //  exemple "st2;combiduino
-      send_setting2_ecu();
-     }
-    else if (inputString.startsWith("gt3") ) {//envoie le setting a l'iphone
-      //parm retour  
-      // multispark 1/0 (oui/non)
-      // correction avance
-      // knock actif 1/0
-      send_setting3_iphone();
-    }
-     else if (inputString.startsWith("st3;") ) {//ecrit le nouveau setting dans eeprom 
-      //parm retour 
-      // multispark 1/0 (oui/non)
-      // correction avance
-      // knock actif 1/0
-      //  exemple "st3;0;3;1
-      send_setting3_ecu();
-    }
-    else if (inputString.startsWith("initkpa") ) {//re initialise la reference kpa 
-      initpressure();
-      debug("init kpa ok");
-    }
     else if (inputString.startsWith("recknk on") ) {//record knock moyen 
       recordknock();
       debug("record knock");
@@ -155,22 +71,6 @@ void checkdesordres(){
       correction_lambda_used = false;
       debug("AFR OFF");
     }
-    else if (inputString.equals("p") ) {//ajustement pour reqfuel
-      Req_Fuel_us += 500;
-      debug("plusreq");
-    }
-    else if (inputString.equals("m") ) {//ajustement pour reqfuel 
-      Req_Fuel_us -= 500;
-      debug("moinsreq");
-    }
-    else if (inputString.equals("ego w") ) {//write dans eeprom des corrections 
-      writeego_ram_eeprom();
-      debug("write ego");
-    }
-    else if (inputString.equals("ego p") ) {//imprime les corrections actuels 
-      printego_ram();
-      debug("print ego");
-    }
     else if (inputString.equals("idle on") ) {//imprime les corrections actuels 
       Idle_management = true;
       debug("idle on");
@@ -179,8 +79,9 @@ void checkdesordres(){
       Idle_management = false;
       debug("idle off");
     }
-     else if (inputString.equals("init log") ) {//imprime les corrections actuels 
-      initlog();
+    else if (inputString.startsWith("MCE;") ) {// change la richesse actuelle
+    //parm 1 nr de carto 
+      changement_MCE(); 
     }
     // RAZ c est traite 
      inputString = "";
@@ -197,6 +98,21 @@ void checkdesordres(){
 //-----------------------------------------------------------------
 //       ENVOI DES SETTINGS DE L'IPHONE => ECU
 //-----------------------------------------------------------------
+
+//------------------------------------------------------------------
+// Enrichissement manuel
+//------------------------------------------------------------------
+void changement_MCE(){
+  String MCE_string="100";
+  MCE_string = getValue(inputString, ';', 1) ; // 1er parametre
+  if ( (MCE_string.toInt() >70) && (MCE_string.toInt() <= 140) ){
+    ECU.MCE_actuel = MCE_string.toInt();
+  debug("enrich change " + MCE_string);
+  }else{
+    debug("enrich invalide " + MCE_string);
+  }
+}
+
 
 // Maj des settings dans l'eeprom a partir de l'Iphone
 void send_setting1_ecu(){

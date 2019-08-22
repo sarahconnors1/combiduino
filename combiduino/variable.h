@@ -20,14 +20,14 @@ struct SEND_DATA_STRUCTURE{
   byte running_option; 
   volatile unsigned int  engine_rpm_average = 0; // Initial average engine rpm pour demarrage
   float map_pressure_kpa = 100 ; // depression moyenne dans le colecteur 100 = pression atmo 
-  int  MAPdot = 0 ; // kpa/s d'acceleration
+//  int  MAPdot = 0 ; // kpa/s d'acceleration
   unsigned int  injection_time_us = 0; // temps d'injection corrigé pour le timer
   float VE_actuel= 20; // VE du dernier calcul = taux de remplissage du cylindre 0 ->1xx 
   int AFR_actuel=147; // valeur AFR 100 -> 190   
   byte correction_lambda_actuel = 100;  // Pourcentage de correction lambda 
   float Degree_Avance_calcul=10 ;    // Degree_Avance_calculÃ© suivant la cartographie a 10 par defaut pour demmarragee 
   int TPS_actuel = 0;  // % de la pedale d'accelerateur
-  int TPSdot = 0;  // TPS/s d'acceleration
+ // int TPSdot = 0;  // TPS/s d'acceleration
   byte running_mode = 0; // etat du moteur  
   byte carto_actuel = 1 ; //cartographie en cours
   float PID_idle_advance = 0; // avance supplementaire au ralenti 
@@ -39,13 +39,27 @@ struct SEND_DATA_STRUCTURE{
   byte AFR_objectif; // objectif de la carto
   byte point_KPA = 16; // index dans la carto
   byte point_RPM= 0; // index dans la carto
-  int TPSMAPdot = 0; // somme des TPSdot et MAPdot pour gerer l'acceleration
-  unsigned int PW_accel_actuel_us = 0; // accel du dernier calcul en microsecond
-  float var1 = 0; // valeur libre TPS ADC
-  float var2 = 0; // valeur libre 
+//  int TPSMAPdot = 0; // somme des TPSdot et MAPdot pour gerer l'acceleration
+//  unsigned int PW_accel_actuel_us = 0; // accel du dernier calcul en microsecond
+  byte VLT =120; //voltage actuel de la batterie
+  unsigned int  tps_ouverture_injecteur_us = 800; // IOT temps d'ouverture des injecteurs suivant la trension
+  byte MCE_actuel = 100 ; // Enrichissement manuel
+//  float var1 = 0; // valeur libre TPS ADC
+//  float var2 = 0; // valeur libre 
 };
 //give a name to the group of data
 SEND_DATA_STRUCTURE ECU;
+
+#if ACCEL_USED==1
+ int TPSdot = 0;  // TPS/s d'acceleration
+ int TPSMAPdot = 0; // somme des TPSdot et MAPdot pour gerer l'acceleration
+ int  MAPdot = 0 ; // kpa/s d'acceleration
+ unsigned int PW_accel_actuel_us = 0; // accel du dernier calcul en microsecond
+
+#endif
+
+float var1 = 0; // valeur libre TPS ADC
+float var2 = 0; // valeur libre 
 
 
 //-------------------------------------------- Global variables --------------------------------------------//
@@ -63,6 +77,30 @@ const int MAP_pin = A0;            // depression
 const int pin_lambda = A5;         // Signal lambda
 const int TPS_pin = A1;            // TPS
 const int CLT_pin = A2;            // CLT temperature huile
+const int VLT_pin = A4;            // VLT voltage
+
+// --------------------------------------------- PIN pour la prise DB9 -------------------------------------// 
+// Vue de l'interieur
+
+//              /  1   2   3   4  \ 
+//             / 1   2   3   4   5 \
+
+// Haut
+// 1 D0
+// 2 D1
+// 3 A2 CLT
+// 4 A1 TPS
+
+// Bas
+// 1 A5 LAmbda
+// 2 +5V
+// 3
+// 4 D13 SAW
+// 5 PIP
+
+
+
+
 //--------------------declaration du debugging
 String debugstring = "";
 
@@ -83,7 +121,7 @@ byte running_mode = 0;
 #define BIT_ENGINE_WARMUP   3    // Engine in warmup
 #define BIT_ENGINE_ACC      4    // in acceleration mode
 #define BIT_ENGINE_DCC      5    // in deceleration mode avec coupure
-#define BIT_ENGINE_MAP      6    // rien
+#define BIT_EGO_ACTIVE      6    // correction lambda possible
 #define BIT_ENGINE_IDLE     7    // idle on
 
 // gestion des differente option activable
@@ -118,6 +156,18 @@ boolean recalcul_paroi = false;
 const int MAP_acc_max = 6; // nombre d'indice du tableua MAP_kpas
 long  last_accel_spark = 0 ; //dernier declenchement d'acceleration
 int saved_accel=0; // acceleration lors du declenchement de l'accel
+
+
+//---------------- Declaration pour Voltage
+const byte nbre_mesure_VLT = 3;
+const int VLT_check_per_S = 4 ; // nombre de calcul par seconde 
+int sum_VLT = 0;
+byte count_VLT = 0;
+
+const int lowvlt_lu = 370; // valeur capteur basse
+const int lowvlt = 90; //voltage bas
+const int highvlt_lu = 615; // valeur capteur haute 
+const int highvlt = 150; //voltage haut
 
 
 //----------------------declaration TPS
@@ -208,9 +258,9 @@ boolean stringComplete3 = false;     // whether the string is complete
 // variable pression moyenne
 int correction_pressure = 400;   // gestion de la valeur du capteur a pression atmo se met a jour lors de lancement
 float previous_map_pressure_kpa = 100;
-int sum_pressure = 0;
+unsigned int sum_pressure = 0;
 byte count_pressure = 0;
-const byte nbre_mesure_pressure = 2;
+const byte nbre_mesure_pressure = 3;
 const int MAP_check_per_S = 12 ; // nombre de calcul par seconde d'acceleration / depression
 const int kpa_0V = 0; // Kpa reel lorsque le capteur indique 0V
 
@@ -281,6 +331,8 @@ unsigned long time_check_CLT = 0;
 const unsigned long interval_time_check_CLT = 1000 ; // CLT 1 fois / seconde
 unsigned long time_check_TPSMAPdot = 0;
 const unsigned long interval_time_check_TPSMAPdot = 100 ; // calcul d'accelereation tous les 100ms
+unsigned long time_check_VLT = 0;
+const unsigned long interval_time_check_VLT = 1000 / (VLT_check_per_S * nbre_mesure_VLT); // VLT x fois / seconde
 
 
 unsigned long time_check_connect = 0; 
@@ -292,7 +344,7 @@ unsigned long time_check_AFR_correction = 2000;
 unsigned long time_check_fuel_pump = 0; 
 const unsigned long interval_time_check_fuel_pump = 2000; // check de la pompe de fuel
 unsigned long time_megalog = 0;
-const unsigned long interval_time_megalog = 100 ; // envoi des log 10 fois par seconde
+const unsigned long interval_time_megalog = 200 ; // envoi des log 5 fois par seconde
 
 //----------------------------
 // Variable pour eeprom
@@ -317,7 +369,6 @@ const int eprom_avance = 4; // emplaceement eeprom de avance initiale
 const int eprom_adresseknock = 25; // emplacement eeprom du knock moyen
 
 const int eprom_ego = 2550; // emplacement eeprom des correction EGO
-
 
 
 

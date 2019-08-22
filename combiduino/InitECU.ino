@@ -46,12 +46,23 @@ void initPIN(){
   digitalWrite (TPS_pin, LOW );
   pinMode(CLT_pin, INPUT);
   digitalWrite (CLT_pin, LOW );
+  pinMode(VLT_pin, INPUT);
+  digitalWrite (VLT_pin, LOW );
+
 
 // reduction temps echantillonage analog read
 #ifdef sbi
-    sbi(ADCSRA,ADPS2);
-    cbi(ADCSRA,ADPS1);
-    cbi(ADCSRA,ADPS0);
+// Division par 16 + rapide
+//    sbi(ADCSRA,ADPS2);
+//    cbi(ADCSRA,ADPS1);
+//    cbi(ADCSRA,ADPS0);
+#endif
+
+#ifdef sbi
+// Division par 64 - rapide
+//    sbi(ADCSRA,ADPS2);
+//    sbi(ADCSRA,ADPS1);
+//    cbi(ADCSRA,ADPS0);
 #endif
 
 }
@@ -67,7 +78,7 @@ void InitPID(){
   egoPID.SetOutputLimits((double)(ego_minoutput), (double)(ego_maxoutput)); 
   egoPID.SetTunings(egoKp, egoKi, egoKd); 
   egoPID.SetSampleTime(100); // tous les 100 millis
-  egoPID.SetMode(AUTOMATIC);
+  egoPID.SetMode(MANUAL);
 #endif  
 }
 

@@ -13,7 +13,9 @@
 #define LOG_PERF 0 // 1 envoi une log du temps par routine 0 pas utilisé
 #define SD_LOG_USED 2 // 1 envoi les log rapide pour le SD mais moins compréhensible/  0 envoi l'ancien format /2 envoi par easytransfert
 #define PID_EGO_USED 1 // 1 utilise le PID EGO
-const byte VERSION= 52;   //version du combiduino
+#define VOLT_CORR_USED 1 // 1 utilise la correction du temps d'ouverture des injecteurs suivant voltage batterrie
+#define ACCEL_USED 0  // 1 pour uitilser l enrichissement classique pompe de reprise et le calcul des accel KPA/TPS
+const byte VERSION= 58;   //version du combiduino
 //-------------------------------------------- Include Files --------------------------------------------//
 #include <EasyTransfer.h>
 EasyTransfer ET; 
@@ -38,19 +40,20 @@ EasyTransfer ET;
 //--------------------------------------------Paramètre --------------------------------------------------//
 //------ injection 
 // phase demarrage
-const byte ouverture_initiale = 6 ; // nombre de millisecond d'ouverture des injecteurs avant démarrage
+const byte ouverture_initiale = 8 ; // nombre de millisecond d'ouverture des injecteurs avant démarrage
 const int after_start_nb_spark = 400; // enrichissement pendant x etincelle au demarrage 
 const byte enrichissement_after_start = 130 ; // % d'enrichissemnt a après démarrage 
 
 // phase normal
 unsigned int Req_Fuel_us = 5000 / nombre_inj_par_cycle;  // ouverture max des injecteurs 100% 
-const unsigned int injector_opening_time_us = 800; // temps d'ouverture de l'injecteur en us
+
 const byte lissage_kpa_running = 50 ;  // facteur lissage des KPA au regime normal
 const byte lissage_TPS_running = 50 ;  // facteur lissage du TPS au regime normal
 
 // phase ralenti
 const int RPM_idle_max = 1100; // valeur RPM max pour déclencher le mode idle
 const int MAP_idle_max = 45; // valeur MAP max pour déclencher le mode idle
+const int MAP_idle_max_warmup = 50; // valeur MAP max pour déclencher le mode idle si on est en warmup
 const int TPS_idle_max = 4; // valeur MAP max pour déclencher le mode idle
 boolean Idle_management = true; // gestion du ralenti controlé par PID
 double RPM_idle_objectif = 950; // Objectif de ralenti
@@ -75,6 +78,12 @@ const unsigned long interval_time_decel = 2000; // declenche la deceleration si 
 //gestion lambda
 const byte lissage_AFR = 60 ;  // facteur lissage des AFR
 
+// gestion correction du temps d'ouverture des injecteurs suivant la tension
+unsigned int injector_opening_time_us = 800; // temps d'ouverture de l'injecteur en us si pas de VLT
+const byte VLTmin= 110; // Tension Mini
+const unsigned int injector_opening_time_us_VLTmin = 900;
+const byte VLTmax = 145; // Tension maxi
+const unsigned int injector_opening_time_us_VLTmax = 800;
 
 // Apprentissage par la lambda 
 byte max_lambda_cor = 110; // correction maxi
@@ -86,8 +95,8 @@ const byte lambda_kpa_index_min = 11; // pas de correction lambda si superieur p
 const byte lambda_rpm_index_min = 3; // pas de correction lambda si inferieur pour proteger le ralenti
 
 //correction PID lambda
-const double ego_minoutput= -10;
-const double ego_maxoutput=  10;
+const double ego_minoutput= -6;
+const double ego_maxoutput=  8;
 const double ego_coeff = 0.01; 
 double egoKp=2 * ego_coeff, egoKi=0.1 * ego_coeff, egoKd=0.5 * ego_coeff;
 
@@ -188,6 +197,9 @@ if (BIT_CHECK(ECU.running_option,BIT_NEW_VALUE)) {deb();calcul_carto(); fin("clc
   if (time_loop - time_check_depression > interval_time_check_depression){deb();gestiondepression();time_check_depression = time_loop;fin("dep");}
 // recalcul du TPS
   if (time_loop - time_check_TPS > interval_time_check_TPS){deb();gestionTPS();time_check_TPS = time_loop;fin("tps");}
+// recalcul du VLT
+  if (time_loop - time_check_VLT > interval_time_check_VLT){deb();gestionVLT();time_check_VLT = time_loop;fin("vlt");}
+
 // recalcul de la lambda
   if (time_loop - time_check_lambda > interval_time_check_lambda){deb();lecturelambda();time_check_lambda = time_loop;fin("lbd");}
 // recalcul du CLT
